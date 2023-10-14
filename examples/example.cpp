@@ -216,7 +216,7 @@ test_serialization()
 
 	// save the arrays with names
 	std::cout << "\nsavez_named:              " << ncr::numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true);
-	std::cout << "\nsavez_named_compressed:   " << ncr::numpy::savez("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true);
+	std::cout << "\nsavez_named_compressed:   " << ncr::numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true);
 
 	// save the arrays without names (creates arr_0, arr_1, ...)
 	std::cout << "\nsavez_unnamed:            " << ncr::numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true);
