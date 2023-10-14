@@ -190,17 +190,4 @@ std::complex<f64> bswap<std::complex<f64>>(std::complex<f64> val)
 	return std::complex<f64>(*reinterpret_cast<f64*>(&ureal), *reinterpret_cast<f64*>(&uimag));
 }
 
-
-#if 0
-template<std::integral T>
-void dump(T v, char term = '\n')
-{
-    std::cout << std::hex << std::uppercase << std::setfill('0')
-              << std::setw(sizeof(T) * 2) << v << " : ";
-    for (std::size_t i{}; i != sizeof(T); ++i, v >>= 8)
-        std::cout << std::setw(2) << static_cast<unsigned>(T(0xFF) & v) << ' ';
-    std::cout << std::dec << term;
-}
-#endif
-
 }
