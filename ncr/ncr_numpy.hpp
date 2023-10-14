@@ -966,9 +966,9 @@ is_zip_file(std::istream &is)
 	u8 buffer[4];
 	is.read((char*)buffer, 4);
 	return buffer[0] == 0x50 &&
-		   buffer[1] == 0x4b &&
-		   buffer[2] == 0x03 &&
-		   buffer[3] == 0x04;
+	       buffer[1] == 0x4b &&
+	       buffer[2] == 0x03 &&
+	       buffer[3] == 0x04;
 }
 
 
