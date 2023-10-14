@@ -814,7 +814,7 @@ parse_header(
 			res &= ~result::warning_missing_descr;
 		}
 
-		// determine if the array data is in fortran order (row major) or not
+		// determine if the array data is in fortran order or not
 		if (equals(kv->nodes[0]->range(), "fortran_order")) {
 			if (kv->nodes[1]->dtype != pyparser::type::boolean)
 				return result::error_fortran_order_invalid_value;
