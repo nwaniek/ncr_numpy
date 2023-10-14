@@ -639,18 +639,18 @@ struct pyparser
 		dict,           // dict of the form {key0:value0, key1:value1, ...}
 
 		symbol,         // anything like {}[], etc. we return parse_results for
-						// symbols even though they don't specify a particular
-						// type, because we might want to extract the beginning
-						// and end of certain groups. This keeps the interface
-						// somewhat small. A parse result of type symbol should
-						// never end up directly or indirectly in the
-						// root_context. This allows to store everything the
-						// parser returns in a parse result, i.e. it will not
-						// require a different data type. Could have used an
-						// std::vector or similar container, though.
+		                // symbols even though they don't specify a particular
+		                // type, because we might want to extract the beginning
+		                // and end of certain groups. This keeps the interface
+		                // somewhat small. A parse result of type symbol should
+		                // never end up directly or indirectly in the
+		                // root_context. This allows to store everything the
+		                // parser returns in a parse result, i.e. it will not
+		                // require a different data type. Could have used an
+		                // std::vector or similar container, though.
 
 		root_context,   // root context, contains everything that was parsed
-						// successfully
+		                // successfully
 	};
 
 
@@ -698,10 +698,10 @@ struct pyparser
 	};
 
 
-	// state variables of the parse
-	tokenizer *tokens = nullptr;      // the tokenizer used during parsing. Note
-									  // that this member will live only during
-									  // a call to parse()
+	// the tokenizer used during parsing. Note that this member will live only
+	// during a call to parse()
+	tokenizer *tokens = nullptr;
+
 
 	inline static constexpr bool
 	is_number(token &tok)
@@ -763,6 +763,7 @@ struct pyparser
 		return {};
 	}
 
+
 	/*
 	 * parse a token that evalutes Fn to true.
 	 *
@@ -793,6 +794,7 @@ struct pyparser
 		tokens->restore(rp);
 		return {};
 	}
+
 
 	// symbols. result of these parse instructions will be ignored, but for the
 	// sake of completeness, we still specify a parser type
