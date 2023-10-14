@@ -6,9 +6,6 @@
  * See LICENSE file for more details
  */
 
-// TODO: remove when done
-#include <iostream>
-
 #include <zip.h>
 #include <ncr/ncr_numpy.hpp>
 
