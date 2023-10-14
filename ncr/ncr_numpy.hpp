@@ -134,7 +134,7 @@
 
 namespace ncr { namespace numpy {
 
-	// TODO: can be moved in its own file
+// TODO: maybe move to its own file
 
 /*
  * zip - namespace for arbitrary zip backend implementations
@@ -144,9 +144,9 @@ namespace ncr { namespace numpy {
  * some flexibility in the backend and allow projects to avoid pulling in too
  * many dependencies (if they already use a backend), specify only an interface
  * here. It is up to the user to select which backend to use. With ncr_numpy
- * there comes ncr_numpy_libzip.cpp, which implements a libzip backend. Follow
- * the implementation there to implement alternative backends. Make sure to tell
- * your build system to pick the right one
+ * there comes ncr_numpy_impl_libzip.cpp, which implements a libzip backend.
+ * Follow the implementation there to implement alternative backends. Make sure
+ * to tell your build system to pick the right one.
  */
 namespace zip {
 	// TODO: improve reporting of backend errors and pass-through of errors to
