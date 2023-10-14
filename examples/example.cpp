@@ -50,22 +50,22 @@ hexdump(std::ostream& os, const u8_vector &data)
 bool
 buffer_from_file(std::filesystem::path filepath, u8_vector &buffer)
 {
-    std::ifstream fstream(filepath, std::ios::binary | std::ios::in);
-    if (!fstream) {
-        std::cerr << "Error opening file: " << filepath << std::endl;
-        return false;
-    }
+	std::ifstream fstream(filepath, std::ios::binary | std::ios::in);
+	if (!fstream) {
+		std::cerr << "Error opening file: " << filepath << std::endl;
+		return false;
+	}
 
 	// resize buffer and read
 	auto filesize = ncr::numpy::get_file_size(fstream);
 	buffer.resize(filesize);
-    fstream.read(reinterpret_cast<char*>(buffer.data()), filesize);
+	fstream.read(reinterpret_cast<char*>(buffer.data()), filesize);
 
 	// check for errors
-    if (!fstream) {
-        std::cerr << "Error reading file: " << filepath << std::endl;
-        return false;
-    }
+	if (!fstream) {
+		std::cerr << "Error reading file: " << filepath << std::endl;
+		return false;
+	}
 	return true;
 }
 
