@@ -1,6 +1,8 @@
 ncr_numpy - C++20 library for numpy npz and npy files
 =====================================================
 
+tl;dr: go to `example.cpp <examples/example.cpp`_
+
 What
 ----
 ncr_numpy is a C++ library with minimal dependencies for reading and writing npz
