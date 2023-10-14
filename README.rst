@@ -1,7 +1,7 @@
 ncr_numpy - C++20 library for numpy npz and npy files
 =====================================================
 
-tl;dr: go to `example.cpp <examples/example.cpp`_
+tl;dr: go to `example.cpp <examples/example.cpp>`_
 
 What
 ----
