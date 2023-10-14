@@ -90,8 +90,8 @@ test_ndarray()
 			f32 f = array(row, col).as<f32>();
 			std::cout << "  array(" << row << "," << col << ") = " << f << "\n";
 
-			// set value to something else
-			array.value<float>(row, col) = (f32)(row + 1) + (f32)col * 0.1f;
+			// set value to something else using the ndarray_item interface
+			array(row, col) = (f32)(row + 1) + (f32)col * 0.1f;
 		}
 
 	// read the values again and display them
