@@ -92,8 +92,17 @@ verified by looking at a hex-dump of the files. For an example how to generate
 such a hexdump, see examples/example.cpp.
 
 
-License
--------
+Related (ncr) projects
+----------------------
+
+* `ncr <http://github.com/nwaniek/ncr>`_ the Neural and Natural Computation
+  Repository. `ncr` contains C++20 headers for all kind of purposes, but with a
+  focus on neural computation and (numerical) simulation of natural processes
+  and dynamics.
+
+
+License Information
+-------------------
 MIT License. See `LICENSE <LICENSE>`_ for more details.
 
 
