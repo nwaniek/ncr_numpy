@@ -118,6 +118,17 @@ and the payload remain the same (up to a certain file size limit). This can be
 verified by looking at a hex-dump of the files. For an example how to generate
 such a hexdump, see examples/example.cpp.
 
+**Q**: is `ncr_numpy` without any errors and does it support everything that
+`numpy` arrays provide?
+**A**: No, and no. First, it is highly unlikely that any software project has no
+errors. Still, the goal is to reduce errors as much es possible and continuously
+improve `ncr_numpy`. Second, `ncr_numpy` is not a full implementation of
+`numpy`'s ndarray, but rather for loading `numpy` arrays from `.npy` and `.npz`
+files. Hence, the `ndarray` that is provided with `ncr_numpy` only provides a
+very small subset of functions to work with n-dimensional arrays in C++. If you
+need more functionality, in particular for mathematical operations, please have
+a look at mature C++ math libraries such as `Eigen`, `blaze`, or `Armadillo`.
+
 
 Related (ncr) projects
 ----------------------
