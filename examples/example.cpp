@@ -251,8 +251,6 @@ main()
 	test_ndarray();      std::cout << "\n";
 	test_simple_api();   std::cout << "\n";
 	test_advanced_api(); std::cout << "\n";
-
 	test_serialization();
-
 	return 0;
 }
