@@ -951,7 +951,7 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
 
 	// build the ndarray from the data that we read by moving into it
-	array.assign(std::move(dtype), std::move(shape), std::move(buf));
+	array.assign(std::move(dtype), std::move(shape), std::move(buf), order);
 
 	return res;
 }
