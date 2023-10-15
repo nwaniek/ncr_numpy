@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
+#include <functional>
 #include <ncr/ncr_numpy.hpp>
 #include <ncr/ncr_ndarray.hpp>
 
@@ -106,6 +107,52 @@ test_ndarray()
 }
 
 
+
+template <typename T, typename Fn = std::function<T (T)>>
+void print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
+{
+	auto shape = arr.shape();
+	auto len   = shape.size();
+
+	if (dim == len - 1) {
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			if (i > 0)
+				os << ", ";
+			os << std::setw(2) << transform(arr.value<T>(indexes));
+		}
+		os << "]";
+	}
+	else {
+		if (dim == 0)
+			os << indent;
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			// indent
+			if (i > 0)
+				os << indent << std::setw(dim+1) << "";
+			print_tensor<T>(os, arr, indent, indexes, dim+1, transform);
+			if (shape[dim] > 1) {
+				if (i < shape[dim] - 1)
+					os << ",\n";
+			}
+		}
+		os << "]";
+	}
+}
+
+template <typename T, typename Fn = std::function<T (T)>>
+void print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; })
+{
+	auto shape = arr.shape();
+	auto dims  = shape.size();
+	u64_vector indexes(dims);
+	print_tensor<T>(std::cout, arr, indent, indexes, 0, transform);
+}
+
+
 void
 test_simple_api()
 {
@@ -115,15 +162,37 @@ test_simple_api()
 	auto val = ncr::numpy::load("assets/in/simple.npy");
 	std::cout << std::boolalpha;
 	std::cout << "\nsimple.npy:               " << std::holds_alternative<ncr::ndarray>(val);
+	std::cout << "\n";
+	print_tensor<i64>(std::get<ncr::ndarray>(val), "  ");
+	std::cout << "\n";
+
 
 	val = ncr::numpy::load("assets/in/simpletensor1.npy");
 	std::cout << "\nsimpletensor1.npy:        " << std::holds_alternative<ncr::ndarray>(val);
+	std::cout << "\n";
+	print_tensor<f64>(std::get<ncr::ndarray>(val), "  ");
+	std::cout << "\n";
 
 	val = ncr::numpy::load("assets/in/simpletensor2.npy");
 	std::cout << "\nsimpletensor2.npy:        " << std::holds_alternative<ncr::ndarray>(val);
+	std::cout << "\n";
+	print_tensor<i64>(std::get<ncr::ndarray>(val), "  ");
+	std::cout << "\n";
 
 	val = ncr::numpy::load("assets/in/complex.npy");
 	std::cout << "\ncomplex.npy:              " << std::holds_alternative<ncr::ndarray>(val);
+	std::cout << "\n";
+	// the data in this tensor needs a byteswap because it is stored in
+	// big-endian, while most systems actually are little-endian. We can apply
+	// the transform in the print_tensor function
+	print_tensor<c64>(std::get<ncr::ndarray>(val), "  ", [](c64 val){ return ncr::bswap<c64>(val); });
+	std::cout << "\n";
+
+	// another way to transform values is with the 'transform' method, which
+	// transforms them given a function during the call
+	auto arr = std::get<ncr::ndarray>(val);
+	std::cout << "complex value: " << arr.transform<c64>([](c64 val){ return ncr::bswap<c64>(val); }, 1, 1) << "\n";
+
 
 	val = ncr::numpy::load("assets/in/structured.npy");
 	std::cout << "\nstructured.npy:           " << std::holds_alternative<ncr::ndarray>(val);

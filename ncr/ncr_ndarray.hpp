@@ -21,6 +21,8 @@
 #pragma once
 
 #include <cassert>
+#include <functional>
+#include <ncr/ncr_bits.hpp>
 #include <ncr/ncr_types.hpp>
 
 namespace ncr {
@@ -401,6 +403,29 @@ struct ndarray
 	}
 
 
+	u8_subrange
+	get(u64_vector indexes)
+	{
+		// TODO: don't assert, throw exception
+		assert(indexes.size() == _shape.size());
+		if (indexes.size() > 0) {
+			size_t offset = 0;
+			for (size_t i = 0; i < indexes.size(); i++) {
+				if (indexes[i] >= _shape[i])
+					throw std::out_of_range("Index out of bounds\n");
+
+				// update offset
+				offset += indexes[i] * _strides[i];
+			}
+			return u8_subrange(_data.begin() + _dtype.item_size * offset,
+			                   _data.begin() + _dtype.item_size * (offset + 1));
+		}
+		else
+			// TODO: like above, evalute if this is the correct response
+			return u8_subrange();
+	}
+
+
 	/*
 	 * operator() - convenience function to avoid template creep in ncr::numpy
 	 *
@@ -415,6 +440,19 @@ struct ndarray
 	}
 
 
+	inline ndarray_item
+	operator()(u64_vector indexes)
+	{
+		return ndarray_item(this->get(indexes));
+	}
+
+
+	/*
+	 * value - access the value at a given index
+	 *
+	 * This function returns a reference, which makes it possible to change the
+	 * value.
+	 */
 	template <typename T, typename... Indexes>
 	inline T&
 	value(Indexes... index)
@@ -426,10 +464,42 @@ struct ndarray
 			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
 			throw std::length_error(s.str());
 		}
+
 		return *reinterpret_cast<T*>(this->get(index...).data());
 	}
 
 
+	template <typename T>
+	inline T&
+	value(u64_vector indexes)
+	{
+		// avoid reintrepreting to types which are too large and thus exceed
+		// memory bounds
+		if (_dtype.item_size < sizeof(T)) {
+			std::ostringstream s;
+			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
+			throw std::length_error(s.str());
+		}
+		return *reinterpret_cast<T*>(this->get(indexes).data());
+	}
+
+
+	/*
+	 * transform - transform a value
+	 *
+	 * This is useful, for instance, when the data stored in the array is not in
+	 * the same storage_order as the system that is using the data.
+	 */
+	template <typename T, typename Fn = std::function<T (T)>, typename... Indexes>
+	inline T
+	transform(Fn fn, Indexes... index)
+	{
+		T val = value<T>(index...);
+		return fn(val);
+	}
+
+
+	// TODO: provide variant with vector argument
 	template <typename... Lengths>
 	result
 	reshape(Lengths... length)
@@ -465,6 +535,26 @@ struct ndarray
 		// TODO: optional fields of the array interface
 		s << "}";
 		return s.str();
+	}
+
+
+	// TODO: provide a method in ndarray that allows to iterate over all elements
+	//       and move the function into this 'iter' or 'walk' method. then
+	//       provide other methods
+	template <typename T>
+	T max()
+	{
+		// TODO: error checking
+		auto stride = sizeof(T);
+		auto nelems = _data.size() / stride;
+
+		T _max = *reinterpret_cast<const T*>(&_data[0]);
+		for (size_t i = 1; i < nelems; i++) {
+			T val = *reinterpret_cast<const T*>(&_data[i * stride]);
+			if (val > _max)
+				_max = val;
+		}
+		return _max;
 	}
 
 
