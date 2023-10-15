@@ -739,4 +739,152 @@ private:
 	}
 };
 
+
+/*
+ * ndarray_t - simple typed facade for ndarray
+ *
+ * This template wraps an ndarray and provides new operator() which return
+ * direct references to the underlying data. These facades are helpful when the
+ * data type of an ndarray is properly known in advance and can be easily
+ * converted to T. This is the case for all basic types.
+ */
+template <typename T>
+struct ndarray_t : ncr::ndarray
+{
+	template <typename... Indexes>
+	inline T& operator()(Indexes... index)
+	{
+		auto range = get(index...);
+		return *reinterpret_cast<T*>(range.data());
+	}
+
+	inline
+	T& operator()(u64_vector indexes)
+	{
+		auto range = get(indexes);
+		return *reinterpret_cast<T*>(range.data());
+	}
+};
+
+
+/*
+ * print_tensor - print an ndarray to an ostream
+ *
+ * Explicit interface, commonly a user does not need to use this function
+ * directly
+ */
+template <typename T, typename Fn = std::function<T (T)>>
+void print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
+{
+	auto shape = arr.shape();
+	auto len   = shape.size();
+
+	if (len == 0) {
+		os << "[]";
+		return;
+	}
+
+	if (dim == len - 1) {
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			if (i > 0)
+				os << ", ";
+			os << std::setw(2) << transform(arr.value<T>(indexes));
+		}
+		os << "]";
+	}
+	else {
+		if (dim == 0)
+			os << indent;
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			// indent
+			if (i > 0)
+				os << indent << std::setw(dim+1) << "";
+			print_tensor<T>(os, arr, indent, indexes, dim+1, transform);
+			if (shape[dim] > 1) {
+				if (i < shape[dim] - 1)
+					os << ",\n";
+			}
+		}
+		os << "]";
+	}
 }
+
+
+/*
+ * print_tensor - print an ndarray to an ostream
+ */
+template <typename T, typename Fn = std::function<T (T)>>
+void print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; }, std::ostream &os = std::cout)
+{
+	auto shape = arr.shape();
+	auto dims  = shape.size();
+	u64_vector indexes(dims);
+	print_tensor<T>(os, arr, indent, indexes, 0, transform);
+}
+
+
+/*
+ * print_tensor - print an ndarray to an ostream
+ *
+ * Explicit interface, commonly a user does not need to use this function
+ * directly
+ */
+template <typename T>
+void print_tensor(std::ostream &os, ncr::ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
+{
+	auto shape = arr.shape();
+	auto len   = shape.size();
+
+	if (len == 0) {
+		os << "[]";
+		return;
+	}
+
+	if (dim == len - 1) {
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			if (i > 0)
+				os << ", ";
+			os << std::setw(2) << arr(indexes);
+		}
+		os << "]";
+	}
+	else {
+		if (dim == 0)
+			os << indent;
+		os << "[";
+		for (size_t i = 0; i < shape[dim]; i++) {
+			indexes[dim] = i;
+			// indent
+			if (i > 0)
+				os << indent << std::setw(dim+1) << "";
+			print_tensor(os, arr, indent, indexes, dim+1);
+			if (shape[dim] > 1) {
+				if (i < shape[dim] - 1)
+					os << ",\n";
+			}
+		}
+		os << "]";
+	}
+}
+
+
+/*
+ * print_tensor - print an ndarray to an ostream
+ */
+template <typename T>
+void print_tensor(ncr::ndarray_t<T> &arr, std::string indent="")
+{
+	auto shape = arr.shape();
+	auto dims  = shape.size();
+	u64_vector indexes(dims);
+	print_tensor(std::cout, arr, indent, indexes, 0);
+}
+
+
+} // ncr

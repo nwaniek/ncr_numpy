@@ -10,6 +10,9 @@
 #include <ncr/ncr_ndarray.hpp>
 
 
+/*
+ * operator<< - utility operator to dump an u8_const_subrange
+ */
 inline std::ostream&
 operator<<(std::ostream &os, const u8_const_subrange &range)
 {
@@ -19,6 +22,9 @@ operator<<(std::ostream &os, const u8_const_subrange &range)
 }
 
 
+/*
+ * hexdump - print an u8_vector similar to hex editor displays
+ */
 void
 hexdump(std::ostream& os, const u8_vector &data)
 {
@@ -45,9 +51,14 @@ hexdump(std::ostream& os, const u8_vector &data)
 		}
 		os << "\n";
 	}
+	// reset to default
+	os << std::setfill(os.widen(' '));
 }
 
 
+/*
+ * buffer_from_file - fill an u8_vector by (binary) reading a file
+ */
 bool
 buffer_from_file(std::filesystem::path filepath, u8_vector &buffer)
 {
@@ -71,11 +82,14 @@ buffer_from_file(std::filesystem::path filepath, u8_vector &buffer)
 }
 
 
+/*
+ * example_ndarray - simple ndarray examples
+ */
 void
-test_ndarray()
+example_ndarray()
 {
-	std::cout << "Test ndarray\n";
-	std::cout << "------------";
+	std::cout << "ndarray example\n";
+	std::cout << "---------------";
 
 	ncr::ndarray array({2, 2}, ncr::dtype_float32());
 	std::cout << "\nshape: ";
@@ -107,54 +121,11 @@ test_ndarray()
 }
 
 
-
-template <typename T, typename Fn = std::function<T (T)>>
-void print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
-{
-	auto shape = arr.shape();
-	auto len   = shape.size();
-
-	if (dim == len - 1) {
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			if (i > 0)
-				os << ", ";
-			os << std::setw(2) << transform(arr.value<T>(indexes));
-		}
-		os << "]";
-	}
-	else {
-		if (dim == 0)
-			os << indent;
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			// indent
-			if (i > 0)
-				os << indent << std::setw(dim+1) << "";
-			print_tensor<T>(os, arr, indent, indexes, dim+1, transform);
-			if (shape[dim] > 1) {
-				if (i < shape[dim] - 1)
-					os << ",\n";
-			}
-		}
-		os << "]";
-	}
-}
-
-template <typename T, typename Fn = std::function<T (T)>>
-void print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; })
-{
-	auto shape = arr.shape();
-	auto dims  = shape.size();
-	u64_vector indexes(dims);
-	print_tensor<T>(std::cout, arr, indent, indexes, 0, transform);
-}
-
-
+/*
+ * example_simple_api - examples for the simple/high level ncr_numpy API
+ */
 void
-test_simple_api()
+example_simple_api()
 {
 	std::cout << "Simple API\n";
 	std::cout << "----------";
@@ -173,11 +144,13 @@ test_simple_api()
 	print_tensor<f64>(std::get<ncr::ndarray>(val), "  ");
 	std::cout << "\n";
 
+
 	val = ncr::numpy::load("assets/in/simpletensor2.npy");
 	std::cout << "\nsimpletensor2.npy:        " << std::holds_alternative<ncr::ndarray>(val);
 	std::cout << "\n";
 	print_tensor<i64>(std::get<ncr::ndarray>(val), "  ");
 	std::cout << "\n";
+
 
 	val = ncr::numpy::load("assets/in/complex.npy");
 	std::cout << "\ncomplex.npy:              " << std::holds_alternative<ncr::ndarray>(val);
@@ -205,8 +178,10 @@ test_simple_api()
 	print_tensor<c64>(arr, "  ");
 	std::cout << "\n";
 
+
 	val = ncr::numpy::load("assets/in/structured.npy");
 	std::cout << "\nstructured.npy:           " << std::holds_alternative<ncr::ndarray>(val);
+
 
 	val = ncr::numpy::load("assets/in/multiple_named.npz");
 	std::cout << "\nmultiple_named.npz:       " << std::holds_alternative<ncr::numpy::npzfile>(val);
@@ -223,8 +198,11 @@ test_simple_api()
 }
 
 
+/*
+ * example_simple_api - examples for the slightly more explicit ncr_numpy API
+ */
 void
-test_advanced_api()
+example_advanced_api()
 {
 	ncr::numpy::npyfile npy;
 	ncr::numpy::npzfile npz;
@@ -270,8 +248,11 @@ test_advanced_api()
 }
 
 
+/*
+ * example_serialization - examples for writing numpy arrays
+ */
 void
-test_serialization()
+example_serialization()
 {
 	std::cout << "Serialization examples: npy files\n";
 	std::cout << "---------------------------------";
@@ -320,7 +301,34 @@ test_serialization()
 	u8_vector buf_out;
 	buffer_from_file("assets/out/structured.npy", buf_out);
 	hexdump(std::cout, buf_out);
+}
 
+
+/*
+ * example_facade - examples for using the ndarray face `ndarray_t`
+ */
+void
+example_facade()
+{
+	std::cout << "facade example\n";
+	std::cout << "--------------\n";
+
+	// we can create facades for arrays, which wrap operator(). This makes
+	// working with ndarrays even easier than with the basic ndarray itself if
+	// you know the underlying type of your data.
+	ncr::ndarray_t<f64> arr;
+	ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr);
+	std::cout << "shape: "; ncr::serialize_shape(std::cout, arr.shape()); std::cout << "\n";
+	std::cout << "\narray before changes\n"	;
+	print_tensor(arr, "  ");
+	std::cout << "\n";
+
+	// change some random values and print again
+	arr(0, 0, 0) = 7.0;
+	arr(1, 1, 1) = 17.0;
+	arr(1, 2, 3) = 23.1234;
+	std::cout << "\narray after changes\n";
+	print_tensor(arr, "  ");
 	std::cout << "\n";
 }
 
@@ -328,9 +336,10 @@ test_serialization()
 int
 main()
 {
-	test_ndarray();      std::cout << "\n";
-	test_simple_api();   std::cout << "\n";
-	test_advanced_api(); std::cout << "\n";
-	test_serialization();
+	example_ndarray();       std::cout << "\n";
+	example_simple_api();    std::cout << "\n";
+	example_advanced_api();  std::cout << "\n";
+	example_serialization(); std::cout << "\n";
+	example_facade();
 	return 0;
 }
