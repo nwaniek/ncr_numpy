@@ -185,14 +185,25 @@ test_simple_api()
 	// the data in this tensor needs a byteswap because it is stored in
 	// big-endian, while most systems actually are little-endian. We can apply
 	// the transform in the print_tensor function
+	std::cout << "big-endian complex valued array transformed to little-endian on-the-fly:\n";
 	print_tensor<c64>(std::get<ncr::ndarray>(val), "  ", [](c64 val){ return ncr::bswap<c64>(val); });
 	std::cout << "\n";
 
 	// another way to transform values is with the 'transform' method, which
 	// transforms them given a function during the call
 	auto arr = std::get<ncr::ndarray>(val);
-	std::cout << "complex value: " << arr.transform<c64>([](c64 val){ return ncr::bswap<c64>(val); }, 1, 1) << "\n";
+	std::cout << "endianness transform during call to .transform(): ";
+	std::cout << arr.transform<c64>([](c64 val){ return ncr::bswap<c64>(val); }, 1, 1) << "\n";
 
+	// can also call apply() and transform each value in the array. Note that
+	// that are different variants of apply, which might be useful when working
+	// with structured arrays
+	arr.apply<c64>([](c64 val){ return ncr::bswap<c64>(val); });
+	// after the previous line, all values are byteswapped within the array. we
+	// can now use it regularly without having to transform it again
+	std::cout << "array after endianness was changed in-place during call to .apply():\n";
+	print_tensor<c64>(arr, "  ");
+	std::cout << "\n";
 
 	val = ncr::numpy::load("assets/in/structured.npy");
 	std::cout << "\nstructured.npy:           " << std::holds_alternative<ncr::ndarray>(val);

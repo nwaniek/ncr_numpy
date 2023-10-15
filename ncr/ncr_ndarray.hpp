@@ -16,6 +16,9 @@
  * returns an ndarray_item, which itself only encapsulates an u8 subrange. To
  * avoid the intermediary ndarray_item, use the ndarray's value() function.
  *
+ *
+ * TODO: determine if size-matching needs to be equal instead of smaller-equal
+ *       (see e.g. ndarray.value)
  */
 
 #pragma once
@@ -354,8 +357,11 @@ struct ndarray
 	}
 
 
-	// assign new data to this array. note that this will clear all available
-	// data beforehand
+	/*
+	 * assign - assign new data to this array
+	 *
+	 * Note that this will clear all available data beforehand
+	 */
 	void assign(dtype &&dtype, u64_vector &&shape, u8_vector &&buffer, storage_order o = storage_order::row_major)
 	{
 		// tidy up first
@@ -374,6 +380,9 @@ struct ndarray
 	}
 
 
+	/*
+	 * get - get the u8 subrange in the data buffer for an element
+	 */
 	template <typename ...Indexes>
 	u8_subrange
 	get(Indexes... index)
@@ -403,6 +412,9 @@ struct ndarray
 	}
 
 
+	/*
+	 * get - get the u8 subrange in the data buffer for an element
+	 */
 	u8_subrange
 	get(u64_vector indexes)
 	{
@@ -440,6 +452,12 @@ struct ndarray
 	}
 
 
+	/*
+	 * operator() - convenience function to avoid template creep in ncr::numpy
+	 *
+	 * this function accepts a vector of indexes to access an array element at
+	 * the specified location
+	 */
 	inline ndarray_item
 	operator()(u64_vector indexes)
 	{
@@ -469,6 +487,16 @@ struct ndarray
 	}
 
 
+	/*
+	 * value - access the value at a given index
+	 *
+	 * Given a vector of indexes, this function returns a reference to the value
+	 * at this index. This makes it possible to change the value within the
+	 * array's data buffer.
+	 *
+	 * Note: This function throws if the size of T is larger than elements
+	 *       stored in the array, of if the indexes are out of bounds.
+	 */
 	template <typename T>
 	inline T&
 	value(u64_vector indexes)
@@ -496,6 +524,84 @@ struct ndarray
 	{
 		T val = value<T>(index...);
 		return fn(val);
+	}
+
+
+	/*
+	 * apply - apply a function to each value in the array
+	 *
+	 * This function applies a user-specified function to each element of the
+	 * array. The user-specified function will receive a constant subrange of u8
+	 * containing the array element, and is expected to return a vector
+	 * containing u8 of the same size as the range. If there is a size-mismatch,
+	 * this function will throw an std::length_error.
+	 *
+	 * TODO: provide an apply function which also passes the element index back
+	 * to the transformation function
+	 */
+	template <typename Fn = std::function<u8_vector (u8_const_subrange)>>
+	inline void
+	apply(Fn fn)
+	{
+		size_t offset = 0;
+		auto stride = _dtype.item_size;
+		while (offset < _data.size()) {
+			auto range = u8_const_subrange(_data.begin() + offset, _data.begin() + offset + stride);
+			auto new_value = fn(range);
+			if (new_value.size() != range.size())
+				throw std::length_error("Invalid size of result");
+			std::copy(new_value.begin(), new_value.end(), _data.begin() + offset);
+			offset += stride;
+		}
+	}
+
+
+	/*
+	 * apply - apply a function to each value in the array
+	 *
+	 * This variant of apply takes a template argument T to internally
+	 * reinterpret_cast the array elements to type T.
+	 *
+	 * Note: no size checking is performed. As a consequence, it is possible to
+	 * call transform<i32>(...) on an array that stores values of types with
+	 * different size, e.g. i16 or i64.
+	 */
+	template <typename T, typename Fn = std::function<T (T)>>
+	inline void
+	apply(Fn fn)
+	{
+		size_t offset = 0;
+		auto stride = sizeof(T);
+		while (offset < _data.size()) {
+			T &val = *reinterpret_cast<T*>(_data.data() + offset);
+			val = fn(val);
+			offset += stride;
+		}
+	}
+
+
+	// TODO: provide a method in ndarray that allows to iterate over all elements
+	//       and move the function into this 'iter' or 'walk' method. then
+	//       provide other methods
+	template <typename T>
+	T max()
+	{
+		if (_dtype.item_size < sizeof(T)) {
+			std::ostringstream s;
+			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
+			throw std::length_error(s.str());
+		}
+
+		auto stride = sizeof(T);
+		auto nelems = _data.size() / stride;
+
+		T _max = *reinterpret_cast<const T*>(&_data[0]);
+		for (size_t i = 1; i < nelems; i++) {
+			T val = *reinterpret_cast<const T*>(&_data[i * stride]);
+			if (val > _max)
+				_max = val;
+		}
+		return _max;
 	}
 
 
@@ -535,26 +641,6 @@ struct ndarray
 		// TODO: optional fields of the array interface
 		s << "}";
 		return s.str();
-	}
-
-
-	// TODO: provide a method in ndarray that allows to iterate over all elements
-	//       and move the function into this 'iter' or 'walk' method. then
-	//       provide other methods
-	template <typename T>
-	T max()
-	{
-		// TODO: error checking
-		auto stride = sizeof(T);
-		auto nelems = _data.size() / stride;
-
-		T _max = *reinterpret_cast<const T*>(&_data[0]);
-		for (size_t i = 1; i < nelems; i++) {
-			T val = *reinterpret_cast<const T*>(&_data[i * stride]);
-			if (val > _max)
-				_max = val;
-		}
-		return _max;
 	}
 
 
