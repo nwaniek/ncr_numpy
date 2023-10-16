@@ -11,17 +11,18 @@ n-dimensional array implementation that is kept independent of the numpy file
 I/O.
 
 For ease of use, the library attempts to replicate the API interface of numpy's
-load and save functions, while at the same time providing an advanced API for
-sophisticated users. Moreover, the ndarray implementation by default returns an
-std::ranges subrange to a vector of uint8_t, which makes adapting the array to
-complex data types as straightforward as possible. A simple interface is
-provided for basic dtypes.
+load and save functions. At the same time, a slightly advanced but more verbose
+API allows to get the most out of ncr_numpy. Moreover, the ndarray
+implementation by default returns an std::ranges subrange to a vector of
+uint8_t, which makes adapting the array to complex data types and structs as
+easy as possible. A facade template `ndarray_t` makes working with ndarray that
+contain basic types straightforward (see examples.cpp:example_facade()).
 
 For ease of customization, the library is written in a way which makes swapping
-out parts easy or adapting it to complex data. For instance, the library
+out parts or adapting it to complex data easy. For instance, the library
 currently uses libzip to read and write npz files (which are in fact simple zip
 archives of npy files), but this particular backend to work with zip archives
-can be replaced easily by implementing only few required functions and compiling
+can be replaced by simply implementing a few required functions and compiling
 against the new implementation.
 
 To achieve the goal of supporting arbitrary structured arrays, ncr_numpy
@@ -33,19 +34,16 @@ subset required for ncr_numpy.
 
 Reason
 ------
-Existing implementations did not provide the functionality I needed. They are
-also not robust enough and throw exceptions instead of return codes in library
-routines, which I personally dislike (I try to never throw exceptions in library
-code, which makes porting to or interfacing with other languages, such as plain
-C, easier). In other parts, existing solutions make wrong assumptions which,
-among other issues, leads to the support of only a narrow subset of the
-capabilities of npy files.
-
-For instance they are not correct regarding handling structured arrays of
-arbitrary depth, or with data having mixed endianness, or in that they wrongly
-assume that certain fields *must* be in the description string of a numpy array
-and throw an exception, or that they don't even bother to check the itemsize
-against the size of the file.  The list goes on.
+Existing implementations do not provide the functionality I need or are not as
+robust as I would like. For instance, they are not necessarily able to handle
+structured arrays of arbitrary depth, or data with mixed endianness. Some
+solutions assume that certain fields in the numpy description header must exist,
+which is wrong. Others throw exceptions in the library code (i.e.  the code
+which loads the files), which I personally dislike. That is, while exceptions
+can be a good tool, I prefer to have return codes in functions that should be
+considered *library code*. Then, simply testing if the file size corresponds to
+the item-size is rarely checked. Anyway, the list goes on and at some point I
+decided to simply roll my own.
 
 
 Goals
@@ -53,9 +51,9 @@ Goals
 The goals of ncr_numpy is to achieve a robust, correct, and fast C++ library to
 load and write numpy data from regular and compressed files, while supporting
 not only basic types (numpy's built in types) but arbitrary structured arrays
-such as nested structs. A further goal is to establish an API interface which is
-easy to use, while also providing a low-level/verbose API which can further
-reduce operations to access data.
+such as nested structs with mixed endianness. A further goal is to establish an
+API interface which is easy to use, while also providing a functions that allow
+to improve performance and reduce the number if intermediary calls.
 
 Finally, ncr_numpy is supposed to integrate nicely within ncr, while being a
 standalone library. Note that both, ncr and ncr_numpy, share some files (e.g.
@@ -82,8 +80,7 @@ instance the following (bibtex) snippet:
         year = {2023}
     }
 
-There might be a proper paper, which describes the software in detail, to cite
-in the future. So, stay tuned.
+There might be a proper paper to cite in the future. Stay tuned.
 
 If you want to donate to this project, get in touch with me. Alternatively, tell
 your favorite funding agency or company to (continue to) fund my research.
