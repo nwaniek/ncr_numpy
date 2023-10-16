@@ -655,7 +655,7 @@ struct ndarray
 private:
 	struct dtype  _dtype;
 	u64_vector    _shape;
-	size_t        _size;
+	size_t        _size  = 0;
 	storage_order _order = storage_order::row_major;
 	u64_vector    _strides;
 	u8_vector     _data;
