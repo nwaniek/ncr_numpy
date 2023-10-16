@@ -163,15 +163,19 @@ example_simple_api()
 	std::cout << "\n";
 
 	// another way to transform values is with the 'transform' method, which
-	// transforms them given a function during the call
+	// transforms them given a function during the call. The example above used
+	// a lambda to wrap ncr::bswap. However, ncr::bswap itself is a function
+	// that fits the required signature. We can directly pass it to transform
+	// instead of using a lambda. The numbers after the function are the indices
+	// of the value which we want to transform
 	auto arr = std::get<ncr::ndarray>(val);
 	std::cout << "endianness transform during call to .transform(): ";
-	std::cout << arr.transform<c64>([](c64 val){ return ncr::bswap<c64>(val); }, 1, 1) << "\n";
+	std::cout << arr.transform<c64>(ncr::bswap<c64>, 1, 1) << "\n";
 
 	// can also call apply() and transform each value in the array. Note that
 	// that are different variants of apply, which might be useful when working
 	// with structured arrays
-	arr.apply<c64>([](c64 val){ return ncr::bswap<c64>(val); });
+	arr.apply<c64>(ncr::bswap<c64>);
 	// after the previous line, all values are byteswapped within the array. we
 	// can now use it regularly without having to transform it again
 	std::cout << "array after endianness was changed in-place during call to .apply():\n";
