@@ -28,7 +28,10 @@ close(backend *bptr)
 {
 	if (!bptr)
 		return result::error_invalid_argument;
-	zip_close(bptr->zip);
+	if (bptr->zip != nullptr) {
+		zip_close(bptr->zip);
+		bptr->zip = nullptr;
+	}
 	return result::ok;
 }
 
