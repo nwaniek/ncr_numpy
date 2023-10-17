@@ -81,8 +81,8 @@ known basic data types easier.
     ncr::ndarray_t<f64> arr;
     ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr);
     arr(0, 0, 0) = 7.0;
-	arr(1, 1, 1) = 17.0;
-	arr(1, 2, 3) = 23.1234;
+    arr(1, 1, 1) = 17.0;
+    arr(1, 2, 3) = 23.1234;
     print_tensor(arr, "  ");
 
 Note that `ndarray` and `ndarray_t` currently do not support any math
