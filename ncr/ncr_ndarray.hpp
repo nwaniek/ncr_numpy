@@ -54,6 +54,7 @@ to_char(byte_order o) {
 		// TODO: set a fail state for invalid
 		case byte_order::invalid:      return '!';
 	}
+	return '!';
 }
 
 
@@ -120,7 +121,7 @@ struct dtype
 {
 	// name of the field in case of strutured arrays. for basic types this is
 	// empty.
-	std::string        name;
+	std::string        name       = "";
 
 	// byte order of the data
 	byte_order         endianness = byte_order::native;
@@ -141,10 +142,10 @@ struct dtype
 	// python's sys.maxsize to get the maximum value, log(sys.maxsize,2)+1 will
 	// tell the number of bits used on a machine. Here, we simply assume that
 	// a u64 is enough.
-	std::vector<u64>   shape;
+	std::vector<u64>   shape      = {};
 
 	// structured arrays will contain fields, which are themselves dtypes
-	std::vector<dtype> fields;
+	std::vector<dtype> fields     = {};
 
 	// quick and explicit test to check if this is a structured array
 	bool               is_structured_array() const { return fields.size() > 0; }
@@ -317,7 +318,6 @@ struct ndarray_item
  */
 struct ndarray
 {
-
 	enum class result {
 		ok,
 		value_error
@@ -630,7 +630,7 @@ struct ndarray
 	{
 		std::ostringstream s;
 		s << "{";
-		serialize_dtype_descr(s, dtype());
+		serialize_dtype_descr(s, type());
 		s << ", ";
 		serialize_fortran_order(s, _order);
 		if (_shape.size() > 0) {
@@ -647,7 +647,7 @@ struct ndarray
 	//
 	// property getters
 	//
-	const struct dtype& dtype() const { return _dtype; }
+	const dtype&        type()  const { return _dtype; }
 	storage_order       order() const { return _order; }
 	const u64_vector&   shape() const { return _shape; }
 	const u8_vector&    data()  const { return _data;  }

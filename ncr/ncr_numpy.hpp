@@ -1157,7 +1157,7 @@ load(std::filesystem::path filepath)
 		npzfile npz;
 		if ((res = from_npz(filepath, npz)) != result::ok)
 			return res;
-		return std::move(npz);
+		return npz;
 	}
 
 	// users are usually only interested in the array when loading from .npy
@@ -1170,7 +1170,7 @@ load(std::filesystem::path filepath)
 			// something else happened
 			return res;
 	}
-	return std::move(arr);
+	return arr;
 }
 
 

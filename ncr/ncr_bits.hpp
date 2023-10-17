@@ -7,15 +7,7 @@
  */
 #pragma once
 
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <cstdint>
-#include <stdfloat>
-#include <ranges>
-#include <climits>
-#include <algorithm>
-
+#include <bit>
 #include <ncr/ncr_types.hpp>
 
 
@@ -156,38 +148,34 @@ u64 bswap<u64>(u64 val)
 template <> inline
 f32 bswap<f32>(f32 val)
 {
-	u32 tmp = bswap<u32>(*reinterpret_cast<u32*>(&val));
-	return *reinterpret_cast<f32*>(&tmp);
+	u32 tmp = bswap<u32>(std::bit_cast<u32, f32>(val));
+	return std::bit_cast<f32>(tmp);
 }
 
 
 template <> inline
 f64 bswap<f64>(f64 val)
 {
-	u64 tmp = bswap<u64>(*reinterpret_cast<u64*>(&val));
-	return *reinterpret_cast<f64*>(&tmp);
+	u64 tmp = bswap<u64>(std::bit_cast<u64, f64>(val));
+	return std::bit_cast<f64>(tmp);
 }
 
 
 template <> inline
 std::complex<f32> bswap<std::complex<f32>>(std::complex<f32> val)
 {
-	f32 freal = real(val);
-	f32 fimag = imag(val);
-	u32 ureal = bswap<u32>(*reinterpret_cast<u32*>(&freal));
-	u32 uimag = bswap<u32>(*reinterpret_cast<u32*>(&fimag));
-	return std::complex<f32>(*reinterpret_cast<f32*>(&ureal), *reinterpret_cast<f32*>(&uimag));
+	u32 ureal = bswap<u32>(std::bit_cast<u32, f32>(real(val)));
+	u32 uimag = bswap<u32>(std::bit_cast<u32, f32>(imag(val)));
+	return std::complex<f32>(std::bit_cast<f32, u32>(ureal), std::bit_cast<f32, u32>(uimag));
 }
 
 
 template <> inline
 std::complex<f64> bswap<std::complex<f64>>(std::complex<f64> val)
 {
-	f64 freal = real(val);
-	f64 fimag = imag(val);
-	u64 ureal = bswap<u64>(*reinterpret_cast<u64*>(&freal));
-	u64 uimag = bswap<u64>(*reinterpret_cast<u64*>(&fimag));
-	return std::complex<f64>(*reinterpret_cast<f64*>(&ureal), *reinterpret_cast<f64*>(&uimag));
+	u64 ureal = bswap<u64>(std::bit_cast<u64, f64>(real(val)));
+	u64 uimag = bswap<u64>(std::bit_cast<u64, f64>(imag(val)));
+	return std::complex<f64>(std::bit_cast<f64, u64>(ureal), std::bit_cast<f64, u64>(uimag));
 }
 
 }
