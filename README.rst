@@ -3,6 +3,7 @@ ncr_numpy - C++20 library for numpy npz and npy files
 
 tl;dr: go to `example.cpp <examples/example.cpp>`_
 
+
 What
 ----
 ncr_numpy is a C++ library with minimal dependencies for reading and writing npz
@@ -10,6 +11,90 @@ and npy files, and uses features of C++20. The library also provides a simple
 n-dimensional array implementation that is kept independent of the numpy file
 I/O.
 
+
+Goals
+-----
+The main goal of ncr_numpy is to achieve a robust, correct, and fast C++ library
+to load and write numpy data from regular and compressed files, while supporting
+not only basic types (numpy's built in types) but arbitrary structured arrays
+such as nested structs with mixed endianness. A further goal is to establish an
+API interface which is easy to use, while also providing a functions that allow
+to improve performance and reduce the number if intermediary calls.
+
+Finally, ncr_numpy is supposed to integrate nicely within ncr, while being a
+standalone library. Note that both, ncr and ncr_numpy, share some files (e.g.
+ncr_types.hpp and ncr_bits.hpp).
+
+
+Features
+--------
+* read and write numpy npy files
+* read and write numpy npz files (zip archives)
+* support structured arrays of arbitrary complexity
+* support data with mixed endianness
+* provide a simple ndarray implementation for arbitrary tensors and data
+  structures
+* provide a facade around ndarray for basic types
+* uses C++20 ranges to achieve a clean API interface
+* provide a simple solution to swap out the zip backend for ease of
+  customization
+
+
+Installation and Usage
+----------------------
+To use `ncr_numpy`, make sure that your compiler can find the header files.
+Thus, either add the path to `ncr_numpy` to your list of includes or copy the
+header files to your preferred location. Also make sure to compile a zip backend
+implementation if you want to use npz files. Currently, `ncr_numpy` ships with
+an implementation that is based on `libzip <libzip>`_ in file
+`ncr/ncr_numpy_impl_libzip.cpp <ncr/ncr_numpy_impl_libzip.cpp>`_. A simple
+`Makefile <examples/Makefile>`_ can be found in the examples `examples <examples>`_ folder.
+
+Using `ncr_numpy` to load data from a file is as simple as:
+
+.. code-block:: c++
+
+    auto val = ncr::numpy::load(your_filepath);
+    if (std::holds_alternative<ncr::ndarray>(val)) {
+        auto arr = std::get<ncr::ndarray>(val);
+        // do something with the array
+    }
+
+Alternatively, you can use a slightly more verbose interface if the file type is
+known beforehand:
+
+.. code-block:: c++
+
+    ncr::ndarray arr;
+    ncr::numpy::npzfile npz;
+    ncr::numpy::from_npz("some/file.npz", npz);
+    std::cout << "shape = ";
+    nzr::serialize_shape(std::cout, npz["array_name"].shape);
+    std::cout << "\n";
+
+`ndarray` and `ndarray_t` support common ways to access data. Note that
+`ndarray_t` is simply a template based facade for `ndarray` to make working with
+known basic data types easier.
+
+.. code-block:: c++
+
+    ncr::ndarray_t<f64> arr;
+    ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr);
+    arr(0, 0, 0) = 7.0;
+	arr(1, 1, 1) = 17.0;
+	arr(1, 2, 3) = 23.1234;
+    print_tensor(arr, "  ");
+
+Note that `ndarray` and `ndarray_t` currently do not support any math
+operations. While this might change in the future, the recommended approach is
+to use existing libraries such as `Eigen` or `Armadillo`.
+
+See `example.cpp <examples/example.cpp>`_ for further examples on how to use
+`ncr_numpy`.
+
+
+Design Principles
+-----------------
 For ease of use, the library attempts to replicate the API interface of numpy's
 load and save functions. At the same time, a slightly advanced but more verbose
 API allows to get the most out of ncr_numpy. Moreover, the ndarray
@@ -32,8 +117,8 @@ however, that they do not support the full python formal grammar, but only the
 subset required for ncr_numpy.
 
 
-Reason
-------
+Reason, or why another C++ numpy loader?
+----------------------------------------
 Existing implementations do not provide the functionality I need or are not as
 robust as I would like. For instance, they are not necessarily able to handle
 structured arrays of arbitrary depth, or data with mixed endianness. Some
@@ -44,20 +129,6 @@ can be a good tool, I prefer to have return codes in functions that should be
 considered *library code*. Then, simply testing if the file size corresponds to
 the item-size is rarely checked. Anyway, the list goes on and at some point I
 decided to simply roll my own.
-
-
-Goals
------
-The goals of ncr_numpy is to achieve a robust, correct, and fast C++ library to
-load and write numpy data from regular and compressed files, while supporting
-not only basic types (numpy's built in types) but arbitrary structured arrays
-such as nested structs with mixed endianness. A further goal is to establish an
-API interface which is easy to use, while also providing a functions that allow
-to improve performance and reduce the number if intermediary calls.
-
-Finally, ncr_numpy is supposed to integrate nicely within ncr, while being a
-standalone library. Note that both, ncr and ncr_numpy, share some files (e.g.
-ncr_types.hpp and ncr_bits.hpp).
 
 
 Usage Guidelines
@@ -125,7 +196,6 @@ files. Hence, the `ndarray` that is provided with `ncr_numpy` only provides a
 very small subset of functions to work with n-dimensional arrays in C++. If you
 need more functionality, in particular for mathematical operations, please have
 a look at mature C++ math libraries such as `Eigen`, `blaze`, or `Armadillo`.
-
 
 Related (ncr) projects
 ----------------------
