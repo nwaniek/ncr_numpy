@@ -65,11 +65,10 @@ known beforehand:
 
 .. code-block:: c++
 
-    ncr::ndarray arr;
     ncr::numpy::npzfile npz;
     ncr::numpy::from_npz("some/file.npz", npz);
     std::cout << "shape = ";
-    nzr::serialize_shape(std::cout, npz["array_name"].shape);
+    ncr::serialize_shape(std::cout, npz["array_name"].shape);
     std::cout << "\n";
 
 `ndarray` and `ndarray_t` support common ways to access data. Note that
