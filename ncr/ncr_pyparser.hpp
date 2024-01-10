@@ -811,7 +811,7 @@ struct pyparser
 	inline std::unique_ptr<parse_result> parse_number()    { return parse_token_fn<type::integer>(is_number);                       }
 	inline std::unique_ptr<parse_result> parse_string()    { return parse_token_type<token::type::string_literal, type::string>();  }
 	inline std::unique_ptr<parse_result> parse_bool()      { return parse_token_type<token::type::bool_literal,   type::boolean>(); }
-	inline std::unique_ptr<parse_result> parse_none()      { return parse_token_type<token::type::none_literal,   type::floating_point>();    }
+	inline std::unique_ptr<parse_result> parse_none()      { return parse_token_type<token::type::none_literal,   type::none>();    }
 
 
 	std::unique_ptr<parse_result>
