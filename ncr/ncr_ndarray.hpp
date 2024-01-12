@@ -25,6 +25,8 @@
 
 #include <cassert>
 #include <functional>
+#include <iomanip>
+#include <iostream>
 #include <ncr/ncr_bits.hpp>
 #include <ncr/ncr_types.hpp>
 
