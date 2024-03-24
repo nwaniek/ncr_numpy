@@ -23,6 +23,16 @@ operator<<(std::ostream &os, const u8_const_subrange &range)
 
 
 /*
+ * strpad - pad a string with whitespace to make it at least length chars long
+ */
+inline std::string
+strpad(const std::string& str, size_t length)
+{
+    return str + std::string(std::max(length - str.size(), size_t(0)), ' ');
+}
+
+
+/*
  * hexdump - print an u8_vector similar to hex editor displays
  */
 void
@@ -125,42 +135,38 @@ example_ndarray()
  * example_simple_api - examples for the simple/high level ncr_numpy API
  */
 void
-example_simple_api()
+example_simple_api(size_t padwidth = 30)
 {
 	std::cout << "Simple API\n";
 	std::cout << "----------";
 
 	auto val = ncr::numpy::load("assets/in/simple.npy");
-	std::cout << std::boolalpha;
-	std::cout << "\nsimple.npy:               " << std::holds_alternative<ncr::ndarray>(val);
-	std::cout << "\n";
+	std::cout << std::boolalpha << "\n";
+	std::cout << strpad("simple.npy:", padwidth) << std::holds_alternative<ncr::ndarray>(val) << "\n";
 	print_tensor<i64>(std::get<ncr::ndarray>(val), "  ");
-	std::cout << "\n";
+	std::cout << "\n\n";
 
 
 	val = ncr::numpy::load("assets/in/simpletensor1.npy");
-	std::cout << "\nsimpletensor1.npy:        " << std::holds_alternative<ncr::ndarray>(val);
-	std::cout << "\n";
+	std::cout << strpad("simpletensor1.npy:", padwidth) << std::holds_alternative<ncr::ndarray>(val) << "\n";
 	print_tensor<f64>(std::get<ncr::ndarray>(val), "  ");
-	std::cout << "\n";
+	std::cout << "\n\n";
 
 
 	val = ncr::numpy::load("assets/in/simpletensor2.npy");
-	std::cout << "\nsimpletensor2.npy:        " << std::holds_alternative<ncr::ndarray>(val);
-	std::cout << "\n";
+	std::cout << strpad("simpletensor2.npy:", padwidth) << std::holds_alternative<ncr::ndarray>(val) << "\n";
 	print_tensor<i64>(std::get<ncr::ndarray>(val), "  ");
-	std::cout << "\n";
+	std::cout << "\n\n";
 
 
 	val = ncr::numpy::load("assets/in/complex.npy");
-	std::cout << "\ncomplex.npy:              " << std::holds_alternative<ncr::ndarray>(val);
-	std::cout << "\n";
+	std::cout << strpad("complex.npy:", padwidth) << std::holds_alternative<ncr::ndarray>(val) << "\n";
 	// the data in this tensor needs a byteswap because it is stored in
 	// big-endian, while most systems actually are little-endian. We can apply
 	// the transform in the print_tensor function
 	std::cout << "big-endian complex valued array transformed to little-endian on-the-fly:\n";
 	print_tensor<c64>(std::get<ncr::ndarray>(val), "  ", [](c64 val){ return ncr::bswap<c64>(val); });
-	std::cout << "\n";
+	std::cout << "\n\n";
 
 	// another way to transform values is with the 'transform' method, which
 	// transforms them given a function during the call. The example above used
@@ -180,24 +186,23 @@ example_simple_api()
 	// can now use it regularly without having to transform it again
 	std::cout << "array after endianness was changed in-place during call to .apply():\n";
 	print_tensor<c64>(arr, "  ");
-	std::cout << "\n";
+	std::cout << "\n\n";
 
 
 	val = ncr::numpy::load("assets/in/structured.npy");
-	std::cout << "\nstructured.npy:           " << std::holds_alternative<ncr::ndarray>(val);
+	std::cout << strpad("structured.npy:", padwidth) << std::holds_alternative<ncr::ndarray>(val) << "\n";
 
 
 	val = ncr::numpy::load("assets/in/multiple_named.npz");
-	std::cout << "\nmultiple_named.npz:       " << std::holds_alternative<ncr::numpy::npzfile>(val);
+	std::cout << strpad("multiple_named.npz:", padwidth) << std::holds_alternative<ncr::numpy::npzfile>(val) << "\n";
 
 	// try to load a file that does not exist. the variant will contain an
 	// ncr::numpy::result with the error code describing what happened.
 	val = ncr::numpy::load("assets/in/does_not_exist.npy");
 	if (std::holds_alternative<ncr::numpy::result>(val))
-		std::cout << "\ndoes_not_exist.npy:       " << std::get<ncr::numpy::result>(val);
+		std::cout << strpad("does_not_exist.npy:", padwidth) << std::get<ncr::numpy::result>(val) << "\n";
 	else
-		std::cout << "\ndoes_not_exist.npy:       surprisingly, file was found o_O";
-
+		std::cout << strpad("does_not_exist.npy:", padwidth) << "surprisingly, file was found o_O\n";
 	std::cout << "\n";
 }
 
@@ -206,30 +211,30 @@ example_simple_api()
  * example_simple_api - examples for the slightly more explicit ncr_numpy API
  */
 void
-example_advanced_api()
+example_advanced_api(size_t padwidth = 30)
 {
 	ncr::numpy::npyfile npy;
 	ncr::numpy::npzfile npz;
 	ncr::ndarray arr;
 
 	std::cout << "Advanced API\n";
-	std::cout << "------------";
+	std::cout << "------------\n";
 
-	std::cout << "\nsimple.npy:               " << ncr::numpy::from_npy("assets/in/simple.npy", arr, &npy);
-
-	ncr::numpy::clear(npy);
-	std::cout << "\nsimpletensor1.npy:        " << ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr, &npy);
+	std::cout << strpad("simple.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simple.npy", arr, &npy) << "\n";
 
 	ncr::numpy::clear(npy);
-	std::cout << "\nsimpletensor2.npy:        " << ncr::numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy);
+	std::cout << strpad("simpletensor1.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr, &npy) << "\n";
 
 	ncr::numpy::clear(npy);
-	std::cout << "\ncomplex.npy:              " << ncr::numpy::from_npy("assets/in/complex.npy", arr, &npy);
+	std::cout << strpad("simpletensor2.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy) << "\n";
 
 	ncr::numpy::clear(npy);
-	std::cout << "\nstructured.npy:           " << ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
+	std::cout << strpad("complex.npy:", padwidth) << ncr::numpy::from_npy("assets/in/complex.npy", arr, &npy) << "\n";
 
-	std::cout << "\nmultiple_named.npz:       " << ncr::numpy::from_npz("assets/in/multiple_named.npz", npz);
+	ncr::numpy::clear(npy);
+	std::cout << strpad("structured.npy:", padwidth) << ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy) << "\n";
+
+	std::cout << strpad("multiple_named.npz:", padwidth) << ncr::numpy::from_npz("assets/in/multiple_named.npz", npz) << "\n";
 
 	std::cout << "\n";
 	for (auto const& name: npz.names) {
@@ -256,23 +261,23 @@ example_advanced_api()
  * example_serialization - examples for writing numpy arrays
  */
 void
-example_serialization()
+example_serialization(size_t padwidth = 30)
 {
 	std::cout << "Serialization examples: npy files\n";
-	std::cout << "---------------------------------";
+	std::cout << "---------------------------------\n";
 
 	ncr::ndarray arr;
 	ncr::numpy::npyfile npy;
 	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
-	std::cout << "\nwrite test:               " << ncr::numpy::save("assets/out/structured.npy", arr, true);
+	std::cout << strpad("write test:", padwidth) << ncr::numpy::save("assets/out/structured.npy", arr, true) << "\n";
 
-	std::cout << "\n\n";
+	std::cout << "\n";
 	std::cout << "Serialization examples: npz files\n";
-	std::cout << "---------------------------------";
+	std::cout << "---------------------------------\n";
 
 	// test npz -> load some of the files, and write them as npz.
 	ncr::ndarray arr0 = ncr::numpy::get_ndarray(ncr::numpy::load("assets/in/simple.npy"));
-	std::cout << "\nsave simple.npz:          " << ncr::numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true);
+	std::cout << strpad("save simple.npz:", padwidth) << ncr::numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true) << "\n";
 
 	// load some data that is then written to npz files
 	ncr::numpy::variant_result val;
@@ -280,28 +285,28 @@ example_serialization()
 	ncr::ndarray arr2 = ncr::numpy::get_ndarray(ncr::numpy::load("assets/in/complex.npy"));
 
 	// save the arrays with names
-	std::cout << "\nsavez_named:              " << ncr::numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true);
-	std::cout << "\nsavez_named_compressed:   " << ncr::numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true);
+	std::cout << strpad("savez_named:", padwidth) << ncr::numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
+	std::cout << strpad("savez_named_compressed:", padwidth) << ncr::numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
 
 	// save the arrays without names (creates arr_0, arr_1, ...)
-	std::cout << "\nsavez_unnamed:            " << ncr::numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true);
-	std::cout << "\nsavez_unnamed_compressed: " << ncr::numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true);
+	std::cout << strpad("savez_unnamed:", padwidth) << ncr::numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true) << "\n";
+	std::cout << strpad("savez_unnamed_compressed:", padwidth) << ncr::numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true) << "\n";
 
 
-	std::cout << "\n\n";
+	std::cout << "\n";
 	std::cout << "hexdump comparison\n";
-	std::cout << "------------------";
+	std::cout << "------------------\n";
 	// Note: file assets/in/structured.npy was generated using python+numpy and
 	// has file version 1.0. In contrast ncr_numpy writes files using version
 	// 2.0. The difference is that 2.0 uses 4 bytes for the header length
 	// instead of 2. This can be verified visually for instance by looking at
 	// the hex dump of the files:
-	std::cout << "\nassets/in/structured.npy:  \n";
+	std::cout << "assets/in/structured.npy:\n";
 	u8_vector buf_in;
 	buffer_from_file("assets/in/structured.npy", buf_in);
 	hexdump(std::cout, buf_in);
 
-	std::cout << "\nassets/out/structured.npy: \n";
+	std::cout << "assets/out/structured.npy: \n";
 	u8_vector buf_out;
 	buffer_from_file("assets/out/structured.npy", buf_out);
 	hexdump(std::cout, buf_out);
