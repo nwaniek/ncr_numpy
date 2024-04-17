@@ -12,13 +12,22 @@
 #define NCR_TYPES
 #endif
 
-#include <ranges>
+#ifndef NCR_TYPES_DISABLE_VECTORS
+#define __NCR_TYPES_ENABLE_VECTORS true
+#else
+#define __NCR_TYPES_ENABLE_VECTORS false
+#endif
+
 #include <cstdint>
-#include <vector>
+#include <complex>
 #if __cplusplus >= 202302L
 	#include <stdfloat>
 #endif
-#include <complex>
+#if __NCR_TYPES_ENABLE_VECTORS
+	#include <ranges>
+	#include <vector>
+#endif
+
 
 using i8           = std::int8_t;
 using i16          = std::int16_t;
@@ -57,6 +66,7 @@ using c64          = std::complex<f32>;
 using c128         = std::complex<f64>;
 using c256         = std::complex<f128>;
 
+#if __NCR_TYPES_ENABLE_VECTORS
 using u8_vector         = std::vector<u8>;
 using u8_iterator       = u8_vector::iterator;
 using u8_subrange       = std::ranges::subrange<u8_iterator>;
@@ -80,3 +90,4 @@ using u64_iterator       = u64_vector::iterator;
 using u64_subrange       = std::ranges::subrange<u64_iterator>;
 using u64_const_iterator = u64_vector::const_iterator;
 using u64_const_subrange = std::ranges::subrange<u64_const_iterator>;
+#endif
