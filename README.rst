@@ -203,7 +203,7 @@ between the files is that files of version 1.0 use 2 bytes to store the size of
 the header information, while version 2.0 uses 4 bytes. The description string
 and the payload remain the same (up to a certain file size limit). This can be
 verified by looking at a hex-dump of the files. For an example how to generate
-such a hexdump, see examples/example.cpp.
+such a hexdump, see `examples/example.cpp <examples/example.cpp>`_.
 
 **Q**: is `ncr_numpy` without any errors and does it support everything that
 `numpy` arrays provide?
@@ -214,7 +214,10 @@ improve `ncr_numpy`. Second, `ncr_numpy` is not a full implementation of
 files. Hence, the `ndarray` that is provided with `ncr_numpy` only provides a
 very small subset of functions to work with n-dimensional arrays in C++. If you
 need more functionality, in particular for mathematical operations, please have
-a look at mature C++ math libraries such as `Eigen`, `blaze`, or `Armadillo`.
+a look at mature C++ math libraries such as
+`Eigen <https://eigen.tuxfamily.org>`_,
+`blaze <https://github.com/dendisuhubdy/blaze>`_, or
+`Armadillo <https://arma.sourceforge.net>`_.
 
 Related (ncr) projects
 ----------------------
