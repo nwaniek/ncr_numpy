@@ -849,7 +849,6 @@ compute_item_size(dtype &dtype)
 {
 	// for simple arrays, we simple report the item size
 	if (!dtype.is_structured_array()) {
-
 		// most types have their 'width' in bytes given directly in the
 		// descr string, which is already stored in dtype.size. However, unicode
 		// strings and objects differ in that the size that is given in the
@@ -1030,7 +1029,7 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		npz.arrays.insert(std::make_pair(array_name, std::make_unique<ndarray>(*array)));
 	}
 
-	// do stuff
+	// close the zip backend and release it again
 	zip::close(bptr);
 	zip::release(&bptr);
 	return result::ok;
@@ -1064,8 +1063,10 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 		return res;
 
 	// test if this is a PKzip file, and if not, then return early
-	if (!is_zip_file(f))
+	if (!is_zip_file(f)) {
+		f.close();
 		return result::error_wrong_filetype;
+	}
 
 	// immediately close the file stream, let the zip backend handle it
 	f.close();
