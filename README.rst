@@ -48,7 +48,7 @@ header files to your preferred location. Also make sure to compile a zip backend
 implementation if you want to use npz files. Currently, `ncr_numpy` ships with
 an implementation that is based on `libzip <libzip>`_ in file
 `ncr/ncr_numpy_impl_libzip.cpp <ncr/ncr_numpy_impl_libzip.cpp>`_. A simple
-`Makefile <examples/Makefile>`_ can be found in the examples `examples <examples>`_ folder.
+`Makefile <examples/Makefile>`_ can be found in the `examples <examples>`_ folder.
 
 Using `ncr_numpy` to load data from a file is as simple as:
 
@@ -71,9 +71,10 @@ known beforehand:
     ncr::serialize_shape(std::cout, npz["array_name"].shape);
     std::cout << "\n";
 
-`ndarray` and `ndarray_t` support common ways to access data. Note that
-`ndarray_t` is simply a template based facade for `ndarray` to make working with
-known basic data types easier.
+Data that is read from a simple numpy file is written to an `ndarray`.
+In addition, there exist `ndarray_t`, which is simply a template based facade
+for `ndarray` to make working with known basic data types easier.
+`ndarray` and `ndarray_t` support common ways to access data:
 
 .. code-block:: c++
 
@@ -87,6 +88,24 @@ known basic data types easier.
 Note that `ndarray` and `ndarray_t` currently do not support any math
 operations. While this might change in the future, the recommended approach is
 to use existing libraries such as `Eigen` or `Armadillo`.
+
+It is also possible to read from .npz files into an `npzfile` instance, as long
+as a zip backend is compiled (see comment above). `npzfile` is merely a thin
+wrapper around an `std::vector` and two `std::map` instances that store the
+names of the arrays and the arrays themselves.
+
+.. code-block:: c++
+
+    ncr::numpy::from_npz("assets/in/multiple_named.npz", npz);
+    for (auto const& name: npz.names) {
+        auto shape = npz[name].shape();
+        std::cout << name << ".shape = ";
+        ncr::serialize_shape(std::cout, shape);
+        std::cout << "\n";
+    }
+
+This example uses `ncr::serialize_shape`, which is a utility function to turn
+the shape of an ndarray into something readable.
 
 See `example.cpp <examples/example.cpp>`_ for further examples on how to use
 `ncr_numpy`.
