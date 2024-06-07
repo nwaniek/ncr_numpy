@@ -17,9 +17,9 @@ Goals
 The main goal of ncr_numpy is to achieve a robust, correct, and fast C++ library
 to load and write numpy data from regular and compressed files, while supporting
 not only basic types (numpy's built in types) but arbitrary structured arrays
-such as nested structs with mixed endianness. A further goal is to establish an
-API interface which is easy to use, while also providing a functions that allow
-to improve performance and reduce the number if intermediary calls.
+such as nested structs with mixed endianness. Another goal is to establish an
+API interface which is easy to use, while also providing functions that allow to
+improve performance and reduce the number of intermediary calls when necessary.
 
 Finally, ncr_numpy is supposed to integrate nicely within ncr, while being a
 standalone library. Note that both, ncr and ncr_numpy, share some files (e.g.
