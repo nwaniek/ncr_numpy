@@ -235,15 +235,13 @@ example_advanced_api(size_t padwidth = 30)
 	std::cout << strpad("structured.npy:", padwidth) << ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy) << "\n";
 
 	std::cout << strpad("multiple_named.npz:", padwidth) << ncr::numpy::from_npz("assets/in/multiple_named.npz", npz) << "\n";
-
-	std::cout << "\n";
+	/// accessing existing arrays
 	for (auto const& name: npz.names) {
 		auto shape = npz[name].shape();
 		std::cout << "    " << name << ".shape = ";
 		ncr::serialize_shape(std::cout, shape);
 		std::cout << "\n";
 	}
-
 	// trying to access an array which does not exist will throw an
 	// std::runtime_error
 	try {
@@ -252,6 +250,11 @@ example_advanced_api(size_t padwidth = 30)
 	catch (std::runtime_error &err) {
 		std::cerr << err.what();
 	}
+
+	// attempt to open a file that does not exist. should produce
+	// "error_file_not_found"
+	std::cout << "\n";
+	std::cout << strpad("invalid.npz:", padwidth) << ncr::numpy::from_npz("assets/in/invalid.npz", npz) << "\n";
 
 	std::cout << "\n";
 }

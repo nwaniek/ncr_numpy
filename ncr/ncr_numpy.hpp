@@ -1056,20 +1056,19 @@ open_fstream(std::filesystem::path filepath, std::ifstream &fstream)
 inline result
 from_npz(std::filesystem::path filepath, npzfile &npz)
 {
-	// open the file
+	// open the file for file type test
 	result res;
 	std::ifstream f;
 	if ((res = open_fstream(filepath, f)) != result::ok)
 		return res;
 
-	// test if this is a PKzip file, and if not, then return early
-	if (!is_zip_file(f)) {
-		f.close();
-		return result::error_wrong_filetype;
-	}
-
-	// immediately close the file stream, let the zip backend handle it
+	// test if this is a PKzip file, also close it again
+	bool test = is_zip_file(f);
 	f.close();
+	if (!test)
+		return result::error_wrong_filetype;
+
+	// let the zip backend handle this file from now on
 	return from_zip_archive(filepath, npz);
 }
 
