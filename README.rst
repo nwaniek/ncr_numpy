@@ -166,7 +166,7 @@ instance the following (bibtex) snippet:
         author =   {Nicolai Waniek},
         title =    {{ncr_numpy}: {A C++20 interface for numpy files}},
         howpublished = {\url{https://github.com/nwaniek/ncr_numpy}}
-        year = {2023}
+        year = {2023--2024}
     }
 
 There might be a proper paper to cite in the future. Stay tuned.
