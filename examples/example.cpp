@@ -7,6 +7,7 @@
  */
 #include <ncr/ncr_numpy.hpp>
 #include <ncr/ncr_ndarray.hpp>
+#include <ncr/ncr_numpy_zip_impl_libzip.hpp>
 
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR 0

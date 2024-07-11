@@ -18,7 +18,7 @@ project(
 # the example project consists of an application 'example', whose source code
 # can be found in example.cpp. It also uses a zip-backend, for which it uses
 # ncr_numpy's default backend implementation
-add_executable(example example.cpp ../ncr/ncr_numpy_impl_libzip.cpp)
+add_executable(example example.cpp)
 
 # pass along version information
 target_compile_definitions(

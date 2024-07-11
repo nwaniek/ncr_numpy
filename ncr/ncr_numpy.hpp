@@ -1,7 +1,7 @@
 /*
  * ncr_numpy - read/write numpy files
  *
- * SPDX-FileCopyrightText: 2023 Nicolai Waniek <n@rochus.net>
+ * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
@@ -109,9 +109,10 @@
 #include <ncr/ncr_types.hpp>
 #include <ncr/ncr_pyparser.hpp>
 #include <ncr/ncr_ndarray.hpp>
-
+#include <ncr/ncr_numpy_zip.hpp>
 
 #ifndef NCR_UTILS
+
 
 /*
  * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
@@ -133,102 +134,6 @@
 
 
 namespace ncr { namespace numpy {
-
-// TODO: maybe move to its own file
-
-/*
- * zip - namespace for arbitrary zip backend implementations
- *
- * Everyone and their grandma has their favourite zip backend. Let it be
- * some custom rolled zlib backend, zlib-ng, minizip, libzip, etc. To provide
- * some flexibility in the backend and allow projects to avoid pulling in too
- * many dependencies (if they already use a backend), specify only an interface
- * here. It is up to the user to select which backend to use. With ncr_numpy
- * there comes ncr_numpy_impl_libzip.cpp, which implements a libzip backend.
- * Follow the implementation there to implement alternative backends. Make sure
- * to tell your build system to pick the right one.
- */
-namespace zip {
-	// TODO: improve reporting of backend errors and pass-through of errors to
-	// numpy's API
-
-	// (partially) translated errors from within a zip backend. they are mostly
-	// inspired from working with libzip
-	enum class result {
-		ok,
-
-		warning_backend_ptr_not_null,
-
-		error_invalid_filepath,
-		error_invalid_argument,
-		error_invalid_bptr,
-
-		error_archive_not_open,
-		error_invalid_file_index,
-		error_file_not_found,
-		error_file_deleted,
-		error_memory,
-		error_write,
-		error_read,
-		error_compression_failed,
-
-		error_end_of_file,
-		error_file_close,
-
-		internal_error,
-	};
-
-	// mode for file opening.
-	// TODO: currently, reading and writing are treated mutually exclusive. not
-	//       clear if this is the best way to treat this
-	enum class filemode : unsigned {
-		read   = 1 << 0,
-		write  = 1 << 1
-	};
-
-	// a zip backend might require to store state between calls, e.g. when
-	// opening a file to store an (internal) file pointer. this needs to be
-	// opaque to the interface
-	struct backend;
-
-	// done reading or writing
-	result close(backend *bptr);
-
-	// retrieve the list of files within an archive
-	result get_file_list(backend *bptr, std::vector<std::string> &list);
-
-	// make initializes a backend pointer. if no backend pointer is required for
-	// the backend implementation, nullptr might be passed in
-	result make(backend **bptr);
-
-	// open a zip file / zip archive
-	result open(backend *bptr, const std::filesystem::path filepath, filemode mode);
-
-	// unzip a given filename from the archive. Note that the filename relates
-	// to a file within the archive, not on the local filesystem. The
-	// decompressed file should be stored in `buffer'.
-	result read(backend *bptr, const std::string filename, u8_vector &buffer);
-
-	// release a backend pointer. if no backend pointer is required for the
-	// backend implementation, nullptr might be passed in
-	result release(backend **bptr);
-
-	// write a buffer to an already opened zip archive. the compression level
-	// depends on the backend. for zlib and many zlib based libraries,, 0 is
-	// most the default compression level, and other compression levels range
-	// from 1 to 9, with 1 being the fastest (but weakest) compression and 9 the
-	// slowest (but strongest).
-	//
-	// Note: the backend implementation will take ownership of the buffer. that
-	// is, the buffer will be moved to the function. The reason is that
-	// (currently) the buffer is created locally and its livetime might be
-	// shorter than what the backend requires. With transfer of ownership, the
-	// backend can make sure that the buffer survives as long as required. For
-	// an example of this behavior, see ncr_numpy_impl_libzip.cpp
-	result write(backend *bptr, const std::string name, u8_vector &&buffer, bool compress, u32 compression_level = 0);
-}
-
-
 
 /*
  * npyfile - file information of a numpy file
@@ -986,17 +891,19 @@ inline result
 from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 {
 	// get a zip backend
-	zip::backend *bptr = nullptr;
-	zip::make(&bptr);
-	if (zip::open(bptr, filepath, zip::filemode::read) != zip::result::ok) {
-		zip::release(&bptr);
+	zip::backend_state *zip_state      = nullptr;
+	zip::backend_interface zip_backend = zip::get_backend_interface();
+
+	zip_backend.make(&zip_state);
+	if (zip_backend.open(zip_state, filepath, zip::filemode::read) != zip::result::ok) {
+		zip_backend.release(&zip_state);
 		return result::error_file_open_failed;
 	}
 
 	std::vector<std::string> file_list;
-	if (zip::get_file_list(bptr, file_list) != zip::result::ok) {
-		zip::close(bptr);
-		zip::release(&bptr);
+	if (zip_backend.get_file_list(zip_state, file_list) != zip::result::ok) {
+		zip_backend.close(zip_state);
+		zip_backend.release(&zip_state);
 		// TODO: better error return value
 		return result::error_file_read_failed;
 	}
@@ -1004,9 +911,9 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 	// for each archive file, decompress and parse the numpy array
 	for (auto &fname: file_list) {
 		u8_vector buffer;
-		if (zip::read(bptr, fname, buffer) != zip::result::ok) {
-			zip::close(bptr);
-			zip::release(&bptr);
+		if (zip_backend.read(zip_state, fname, buffer) != zip::result::ok) {
+			zip_backend.close(zip_state);
+			zip_backend.release(&zip_state);
 			return result::error_file_read_failed;
 		}
 
@@ -1018,8 +925,8 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		ndarray *array = new ndarray;
 		result res;
 		if ((res = from_buffer(std::move(buffer), *npy, *array)) != result::ok) {
-			zip::close(bptr);
-			zip::release(&bptr);
+			zip_backend.close(zip_state);
+			zip_backend.release(&zip_state);
 			return res;
 		}
 
@@ -1030,8 +937,8 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 	}
 
 	// close the zip backend and release it again
-	zip::close(bptr);
-	zip::release(&bptr);
+	zip_backend.close(zip_state);
+	zip_backend.release(&zip_state);
 	return result::ok;
 }
 
@@ -1294,10 +1201,12 @@ to_zip_archive(
 	if (fs::exists(filepath) && !overwrite)
 		return result::error_file_exists;
 
-	zip::backend *bptr = nullptr;
-	zip::make(&bptr);
-	if (zip::open(bptr, filepath, zip::filemode::write) != zip::result::ok) {
-		zip::release(&bptr);
+	zip::backend_state *zip_state        = nullptr;
+	zip::backend_interface zip_interface = zip::get_backend_interface();
+
+	zip_interface.make(&zip_state);
+	if (zip_interface.open(zip_state, filepath, zip::filemode::write) != zip::result::ok) {
+		zip_interface.release(&zip_state);
 		return result::error_file_open_failed;
 	}
 
@@ -1306,18 +1215,18 @@ to_zip_archive(
 		u8_vector buffer;
 		to_npy_buffer(arg.array, buffer);
 		std::string name = arg.name + ".npy";
-		if (zip::write(bptr, name, std::move(buffer), compress) != zip::result::ok) {
-			zip::release(&bptr);
+		if (zip_interface.write(zip_state, name, std::move(buffer), compress, 0) != zip::result::ok) {
+			zip_interface.release(&zip_state);
 			return result::error_file_write_failed;
 		}
 	}
 
-	if (zip::close(bptr) != zip::result::ok) {
-		zip::release(&bptr);
+	if (zip_interface.close(zip_state) != zip::result::ok) {
+		zip_interface.release(&zip_state);
 		return result::error_file_close;
 	}
 
-	zip::release(&bptr);
+	zip_interface.release(&zip_state);
 	return result::ok;
 }
 

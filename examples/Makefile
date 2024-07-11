@@ -16,7 +16,7 @@ LDFLAGS := $(LIBS)
 
 all: example
 
-example: example.cpp ../ncr/ncr_numpy_impl_libzip.cpp
+example: example.cpp
 	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 clean:
