@@ -194,7 +194,7 @@ minimial working example to reproduce the bug.
 **A**: ncr_numpy provides a simple and plain Makefile for the example
 application (see `examples/Makefile <examples/Makefile>`_). To build the
 examples, go to the `examples/ <examples/>`_ directory, run :code:`make` to
-build the application, followed by :code:`./examples` to run the examples.
+build the application, followed by :code:`./example` to run the examples.
 The Makefile can be easily adjusted to specific requirements, or the relevant
 portions extracted to other build systems. The most important aspect is to point
 your build system to ncr_numpy's headers, and in case you use a zip backend, to
