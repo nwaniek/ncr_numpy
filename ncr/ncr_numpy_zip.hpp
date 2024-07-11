@@ -37,7 +37,7 @@ namespace zip {
 
 		error_invalid_filepath,
 		error_invalid_argument,
-		error_invalid_bptr,
+		error_invalid_state,
 
 		error_archive_not_open,
 		error_invalid_file_index,

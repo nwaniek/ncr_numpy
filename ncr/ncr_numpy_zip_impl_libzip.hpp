@@ -14,6 +14,10 @@
 
 namespace ncr { namespace numpy { namespace zip {
 
+
+/*
+ * backend_state - libzip state
+ */
 struct backend_state
 {
 	// zip archive
@@ -26,32 +30,38 @@ struct backend_state
 };
 
 
+/*
+ * libzip_close - close a libzip backend sate
+ */
 inline result
-libzip_close(backend_state *bptr)
+libzip_close(backend_state *state)
 {
-	if (!bptr)
+	if (!state)
 		return result::error_invalid_argument;
-	if (bptr->zip != nullptr) {
-		zip_close(bptr->zip);
-		bptr->zip = nullptr;
+	if (state->zip != nullptr) {
+		zip_close(state->zip);
+		state->zip = nullptr;
 	}
 	return result::ok;
 }
 
 
+/*
+ * libzip_get_file_list - get the list of files contained in an archive
+ */
 inline result
-libzip_get_file_list(backend_state *bptr, std::vector<std::string> &list)
+libzip_get_file_list(backend_state *state, std::vector<std::string> &list)
 {
-	if (!bptr)
-		return result::error_invalid_bptr;
-	if (!bptr->zip)
+	if (!state)
+		return result::error_invalid_state;
+	if (!state->zip)
 		return result::error_archive_not_open;
 
-	zip_int64_t num_entries = zip_get_num_entries(bptr->zip, 0);
+	zip_int64_t num_entries = zip_get_num_entries(state->zip, 0);
 	for (zip_int64_t i = 0; i < num_entries; i++) {
-		const char *fname = zip_get_name(bptr->zip, i, 0);
+		const char *fname = zip_get_name(state->zip, i, 0);
 		if (fname == nullptr) {
-			zip_error_t *error = zip_get_error(bptr->zip);
+			zip_error_t *error = zip_get_error(state->zip);
 			// translate the error code
 			switch (error->zip_err) {
 				case ZIP_ER_MEMORY:  return result::error_memory;
@@ -66,25 +76,31 @@ libzip_get_file_list(backend_state *bptr, std::vector<std::string> &list)
 }
 
 
+/*
+ * libzip_make - make a (libzip) backend state
+ */
 inline result
-libzip_make(backend_state **bptr)
+libzip_make(backend_state **state)
 {
-	if (bptr == nullptr)
+	if (state == nullptr)
 		return result::error_invalid_argument;
 
 	result res = result::ok;
-	if (*bptr != nullptr)
+	if (*state != nullptr)
 		res = result::warning_backend_ptr_not_null;
 
-	*bptr = new backend_state;
+	*state = new backend_state;
 	return res;
 }
 
 
+/*
+ * libzip_open - open a file from an archive
+ */
 inline result
-libzip_open(backend_state *bptr, const std::filesystem::path filepath, filemode mode)
+libzip_open(backend_state *state, const std::filesystem::path filepath, filemode mode)
 {
-	if (!bptr)
+	if (!state)
 		return result::error_invalid_argument;
 
 	// TODO: currently, when opening for writing, the file will be truncated if
@@ -95,7 +111,7 @@ libzip_open(backend_state *bptr, const std::filesystem::path filepath, filemode 
 	int flags = (mode == filemode::read) ? ZIP_RDONLY : (ZIP_CREATE | ZIP_TRUNCATE);
 
 	int err = 0;
-	if ((bptr->zip = zip_open(filepath.c_str(), flags, &err)) == nullptr) {
+	if ((state->zip = zip_open(filepath.c_str(), flags, &err)) == nullptr) {
 		zip_error_t error;
 		zip_error_init_with_code(&error, err);
 		std::cerr << "cannot open zip archive " << filepath << ": " << zip_error_strerror(&error) << "\n";
@@ -106,12 +122,14 @@ libzip_open(backend_state *bptr, const std::filesystem::path filepath, filemode 
 }
 
 
-// unzip a given filename into a buffer
+/*
+ * libzip_read - unzip a given filename (of an archive) into an u8 buffer
+ */
 inline result
 libzip_read(backend_state *bptr, const std::string filename, u8_vector &buffer)
 {
 	if (!bptr)
-		return result::error_invalid_bptr;
+		return result::error_invalid_state;
 	if (!bptr->zip)
 		return result::error_archive_not_open;
 
@@ -172,6 +190,9 @@ libzip_read(backend_state *bptr, const std::string filename, u8_vector &buffer)
 }
 
 
+/*
+ * libzip_release - release the libzip backend state
+ */
 inline result
 libzip_release(backend_state **bptr)
 {
@@ -185,13 +206,13 @@ libzip_release(backend_state **bptr)
 
 
 /*
- * write - write a buffer to a previously open zip archive
+ * libzip_write - write a buffer to a previously open zip archive
  */
 inline result
 libzip_write(backend_state *bptr, const std::string name, u8_vector &&buffer, bool compress, u32 compression_level = 0)
 {
 	if (!bptr)
-		return result::error_invalid_bptr;
+		return result::error_invalid_state;
 	if (!bptr->zip)
 		return result::error_archive_not_open;
 
@@ -227,6 +248,10 @@ libzip_write(backend_state *bptr, const std::string name, u8_vector &&buffer, bo
 	return result::ok;
 }
 
+
+/*
+ * get_backend_interface - get the (libzip) backend interface
+ */
 inline backend_interface&
 get_backend_interface()
 {
