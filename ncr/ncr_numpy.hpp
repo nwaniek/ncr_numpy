@@ -657,11 +657,7 @@ parse_descr(pyparser::parse_result *descr, dtype &dtype)
 
 
 inline result
-parse_header(
-		npyfile      &finfo,
-		dtype         &dtype,
-		storage_order &order,
-		u64_vector    &shape)
+parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &shape)
 {
 	// the header of a numpy file is an ASCII-string terminated by \n and padded
 	// with 0x20 (whitespace), i.e. string\x20\x20\x20...\n, where string is a
@@ -1181,11 +1177,7 @@ struct savez_arg
  * save_npz - save arrays to an npz file
  */
 inline result
-to_zip_archive(
-		std::filesystem::path filepath,
-		std::vector<savez_arg> args,
-		bool compress,
-		bool overwrite=false)
+to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool compress, bool overwrite=false)
 {
 	namespace fs = std::filesystem;
 
@@ -1235,10 +1227,7 @@ to_zip_archive(
  * savez - save name/array pairs to an uncompressed npz file
  */
 inline result
-savez(
-		std::filesystem::path filepath,
-		std::vector<savez_arg> args,
-		bool overwrite=false)
+savez(std::filesystem::path filepath, std::vector<savez_arg> args, bool overwrite=false)
 {
 	return to_zip_archive(filepath, std::forward<decltype(args)>(args), false, overwrite);
 }
@@ -1248,10 +1237,7 @@ savez(
  * savez_compressed - save to compressed npz file
  */
 inline result
-savez_compressed(
-		std::filesystem::path filepath,
-		std::vector<savez_arg> args,
-		bool overwrite=false)
+savez_compressed(std::filesystem::path filepath, std::vector<savez_arg> args, bool overwrite=false)
 {
 	return to_zip_archive(filepath, std::forward<decltype(args)>(args), true, overwrite);
 }
@@ -1264,10 +1250,7 @@ savez_compressed(
  * position in the args vector
  */
 inline result
-savez(
-		std::filesystem::path filepath,
-		std::vector<std::reference_wrapper<ndarray>> args,
-		bool overwrite=false)
+savez(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false)
 {
 	std::vector<savez_arg> _args;
 	size_t i = 0;
@@ -1284,10 +1267,7 @@ savez(
  * position in the args vector
  */
 inline result
-savez_compressed(
-		std::filesystem::path filepath,
-		std::vector<std::reference_wrapper<ndarray>> args,
-		bool overwrite=false)
+savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false)
 {
 	std::vector<savez_arg> _args;
 	size_t i = 0;

@@ -329,8 +329,8 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(std::initializer_list<u64> shape,
-			dtype dtype = dtype_float64(),
-			storage_order o = storage_order::row_major)
+	        dtype dtype = dtype_float64(),
+	        storage_order o = storage_order::row_major)
 	: _dtype(dtype), _shape{shape}, _size(0), _order(o)
 	{
 		_compute_size();
@@ -341,8 +341,8 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(u64_vector shape,
-			dtype dtype = dtype_float64(),
-			storage_order o = storage_order::row_major)
+	        dtype dtype = dtype_float64(),
+	        storage_order o = storage_order::row_major)
 	: _dtype(dtype), _shape(shape), _size(0), _order(o)
 	{
 		_compute_size();
@@ -351,7 +351,10 @@ struct ndarray
 	}
 
 
-	ndarray(dtype &&dtype, u64_vector &&shape, u8_vector &&buffer, storage_order o = storage_order::row_major)
+	ndarray(dtype &&dtype,
+	        u64_vector &&shape,
+	        u8_vector &&buffer,
+	        storage_order o = storage_order::row_major)
 	: _dtype(std::move(dtype)) , _shape(std::move(shape)) , _order(o), _data(std::move(buffer))
 	{
 		_compute_size();
@@ -364,7 +367,11 @@ struct ndarray
 	 *
 	 * Note that this will clear all available data beforehand
 	 */
-	void assign(dtype &&dtype, u64_vector &&shape, u8_vector &&buffer, storage_order o = storage_order::row_major)
+	void
+	assign(dtype &&dtype,
+	       u64_vector &&shape,
+	       u8_vector &&buffer,
+	       storage_order o = storage_order::row_major)
 	{
 		// tidy up first
 		_shape.clear();
@@ -586,7 +593,8 @@ struct ndarray
 	//       and move the function into this 'iter' or 'walk' method. then
 	//       provide other methods
 	template <typename T>
-	T max()
+	T
+	max()
 	{
 		if (_dtype.item_size < sizeof(T)) {
 			std::ostringstream s;
@@ -702,7 +710,9 @@ private:
 			_strides[k] = (this->*fptr)(k);
 	}
 
-	void _compute_size()
+
+	void
+	_compute_size()
 	{
 		// TODO: verify that dtype.item_size and computed _size match
 		if (_shape.size() > 0) {
@@ -728,11 +738,13 @@ private:
 		}
 	}
 
+
 	// _resize - resize _data for _size many items
 	//
 	// Note that this should only be called in the constructor after setting
 	// _dtype and _shape and after a call of _compute_size
-	void _resize()
+	void
+	_resize()
 	{
 		_data.clear();
 		if (!_size)
@@ -754,14 +766,15 @@ template <typename T>
 struct ndarray_t : ncr::ndarray
 {
 	template <typename... Indexes>
-	inline T& operator()(Indexes... index)
+	inline T&
+	operator()(Indexes... index)
 	{
 		auto range = get(index...);
 		return *reinterpret_cast<T*>(range.data());
 	}
 
-	inline
-	T& operator()(u64_vector indexes)
+	inline T&
+	operator()(u64_vector indexes)
 	{
 		auto range = get(indexes);
 		return *reinterpret_cast<T*>(range.data());
@@ -776,7 +789,8 @@ struct ndarray_t : ncr::ndarray
  * directly
  */
 template <typename T, typename Fn = std::function<T (T)>>
-void print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
+void
+print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
 {
 	auto shape = arr.shape();
 	auto len   = shape.size();
@@ -820,7 +834,8 @@ void print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_v
  * print_tensor - print an ndarray to an ostream
  */
 template <typename T, typename Fn = std::function<T (T)>>
-void print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; }, std::ostream &os = std::cout)
+void
+print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; }, std::ostream &os = std::cout)
 {
 	auto shape = arr.shape();
 	auto dims  = shape.size();
@@ -836,7 +851,8 @@ void print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T 
  * directly
  */
 template <typename T>
-void print_tensor(std::ostream &os, ncr::ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
+void
+print_tensor(std::ostream &os, ncr::ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
 {
 	auto shape = arr.shape();
 	auto len   = shape.size();

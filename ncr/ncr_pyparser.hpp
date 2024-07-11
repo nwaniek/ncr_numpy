@@ -368,7 +368,9 @@ struct tokenizer
 		invalid_token,
 	};
 
+
 	tokenizer(u8_const_subrange &_data) : data(_data), tok_start(data.begin()), tok_end(data.begin()) {}
+
 
 	// determine the punctuation type of the symbol under the cursor
 	inline bool
@@ -381,6 +383,7 @@ struct tokenizer
 			}
 		return false;
 	}
+
 
 	// determine if a string is an integer number or not.
 	// TODO: maybe adapt std::from_chars, as this might circumvent using an
@@ -395,6 +398,7 @@ struct tokenizer
 		value = std::strtol(str.c_str(), &end, 10);
 		return *end == '\0';
 	}
+
 
 	// determine if a string is a floating point number or not.
 	// TODO: maybe adapt std::from_chars, as this might circumvent using an
@@ -423,6 +427,7 @@ struct tokenizer
 		return false;
 	}
 
+
 	inline bool
 	is_whitespace(u8 sym) const
 	{
@@ -444,6 +449,7 @@ struct tokenizer
 		restore(rp);
 		return false;
 	}
+
 
 	result
 	__fetch_token(token &tok)
@@ -736,7 +742,8 @@ struct pyparser
 	 */
 	template <token::type TokenType, pyparser::type ParserType>
 	std::unique_ptr<parse_result>
-	parse_token_type() {
+	parse_token_type()
+	{
 		if (!tokens) return {};
 
 		token tok;
@@ -772,7 +779,8 @@ struct pyparser
 	 */
 	template <pyparser::type ParserType, typename F>
 	std::unique_ptr<parse_result>
-	parse_token_fn(F fn) {
+	parse_token_fn(F fn)
+	{
 		if (!tokens) return {};
 
 		token tok;
