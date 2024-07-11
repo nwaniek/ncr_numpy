@@ -5,9 +5,20 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
-#include <functional>
 #include <ncr/ncr_numpy.hpp>
 #include <ncr/ncr_ndarray.hpp>
+
+#ifndef VERSION_MAJOR
+#define VERSION_MAJOR 0
+#endif
+
+#ifndef VERSION_MINOR
+#define VERSION_MINOR 0
+#endif
+
+#ifndef VERSION
+#define VERSION "0.0"
+#endif
 
 
 /*
@@ -348,6 +359,8 @@ example_facade()
 int
 main()
 {
+	std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
+
 	example_ndarray();       std::cout << "\n";
 	example_simple_api();    std::cout << "\n";
 	example_advanced_api();  std::cout << "\n";
