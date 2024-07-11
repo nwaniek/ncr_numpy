@@ -200,7 +200,7 @@ portions extracted to other build systems. The most important aspect is to point
 your build system to ncr_numpy's headers, and in case you use a zip backend, to
 the corresponding implementation file.
 In addition to the Makefile, the examples directory contains a basic cmake
-`CMakeLists.txt <examples/CMakeLists.txt>`_).  To build and run the example
+`CMakeLists.txt <examples/CMakeLists.txt>`_.  To build and run the example
 application using cmake, go to `examples/ <examples/>`_, run :code:`cmake -S
 . -B build && cmake --build build` followed by :code:`./build/example`.
 
