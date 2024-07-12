@@ -21,7 +21,7 @@ namespace ncr { namespace numpy { namespace zip {
 struct backend_state
 {
 	// zip archive
-	zip_t *zip = nullptr;
+	zip_t *zip {nullptr};
 
 	// store all write buffers within the backend to make sure that the buffers
 	// live long enough. zip_file_add does not directly read from the buffer,
@@ -89,7 +89,7 @@ libzip_make(backend_state **state)
 	if (*state != nullptr)
 		res = result::warning_backend_ptr_not_null;
 
-	*state = new backend_state;
+	*state = new backend_state{};
 	return res;
 }
 

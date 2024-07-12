@@ -36,7 +36,7 @@ namespace ncr {
  *             // alternative, maybe even a preferred way, is to use PODs that
  *             // contain state and use free functions. Still, the memory guard
  *             // might be handy
- *             var = new SomeType();
+ *             var = new SomeType{};
  *             memory_guard<SomeType> guard(var);
  *
  *             ...
@@ -48,7 +48,7 @@ namespace ncr {
  * Example with unique_ptr:
  *
  *            // .. struct is same as above
- *            var = new SomeType();
+ *            var = new SomeType{};
  *            std::unique_ptr<SomeType>(std::move(*var));
  *
  * Yes, this only saves a few characters to type. However, memory_guard works
@@ -358,7 +358,7 @@ struct tokenizer
 	// implemented which takes care of the buffer growing out-of-bounds.
 	using restore_point = size_t;
 	std::vector<token> buffer;
-	size_t             buffer_pos = 0;
+	size_t             buffer_pos {0};
 
 	// different tokenizer result
 	enum class result : u8 {
@@ -676,10 +676,10 @@ struct pyparser
 		using parse_result_nodes = std::vector<std::unique_ptr<parse_result>>;
 
 		// parse status of this result / context
-		result             status = result::failure;
+		result             status {result::failure};
 
 		// data type of this result / context
-		type               dtype = type::uninitialized;
+		type               dtype  {type::uninitialized};
 
 		// where this type / context starts in the input range
 		u8_const_iterator  begin;
@@ -706,7 +706,7 @@ struct pyparser
 
 	// the tokenizer used during parsing. Note that this member will live only
 	// during a call to parse()
-	tokenizer *tokens = nullptr;
+	tokenizer *tokens {nullptr};
 
 
 	inline static constexpr bool
@@ -1099,7 +1099,7 @@ struct pyparser
 		// could also use another local unique_ptr and move tokens into it, i.e.
 		//    auto ptr = std::make_unique<Foo>(std::move(*tokens));
 		// but that looks really ugly.
-		tokens = new tokenizer(input);
+		tokens = new tokenizer{input};
 		memory_guard<tokenizer> guard(tokens);
 
 		auto ptr = std::make_unique<parse_result>();

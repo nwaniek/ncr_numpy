@@ -143,33 +143,33 @@ struct npyfile
 {
 	// numpy files begin with a magic string of 6 bytes, followed by two bytes
 	// bytes that identify the version of the file.
-	static constexpr u8 magic_byte_count            = 6;
-	static constexpr u8 version_byte_count          = 2;
+	static constexpr u8 magic_byte_count            {6};
+	static constexpr u8 version_byte_count          {2};
 
 	// the header size field is either 2 or 4 bytes, depending on the version.
-	u8                  header_size_byte_count      = 0;
+	u8                  header_size_byte_count      {0};
 
 	// header size in bytes
-	u32                 header_size                 = 0;
+	u32                 header_size                 {0};
 
 	// data offset relative to the original file
-	u64                 data_offset                 = 0;
+	u64                 data_offset                 {0};
 
 	// data (i.e. payload) size. Note that the data size is the size of the raw
 	// numpy array data which follows the header. Not to be confused with the
 	// data size in dtype
-	u64                 data_size                   = 0;
+	u64                 data_size                   {0};
 
 	// file size of the entire file. Note that this is only known when reading
 	// from buffers or streams which support seekg (not necessarily the case for
 	// named pipes or tcp streams).
-	u64                 file_size                   = 0;
+	u64                 file_size                   {0};
 
 	// storage for the magic string.
-	u8                  magic[magic_byte_count]     = {};
+	u8                  magic[magic_byte_count]     {};
 
 	// storage for the version
-	u8                  version[version_byte_count] = {};
+	u8                  version[version_byte_count] {};
 
 	// the numpy header which describes which data type is stored in this numpy
 	// array and how it is stored. Essentially this is a string representation
@@ -917,8 +917,8 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		std::string array_name = fname.substr(0, fname.find_last_of("."));
 
 		// get a npy file and array
-		npyfile *npy = new npyfile;
-		ndarray *array = new ndarray;
+		npyfile *npy = new npyfile{};
+		ndarray *array = new ndarray{};
 		result res;
 		if ((res = from_buffer(std::move(buffer), *npy, *array)) != result::ok) {
 			zip_backend.close(zip_state);
@@ -1008,7 +1008,7 @@ from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
 	// because it is needed during from_buffer
 	bool tmp_npy = npy == nullptr;
 	if (tmp_npy)
-		npy = new npyfile;
+		npy = new npyfile{};
 
 	// Note the change in argument order!
 	res = from_buffer(std::move(buf), *npy, array);
