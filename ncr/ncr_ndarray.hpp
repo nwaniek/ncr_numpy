@@ -123,34 +123,45 @@ struct dtype
 {
 	// name of the field in case of strutured arrays. for basic types this is
 	// empty.
-	std::string        name       = "";
+	std::string
+		name       {""};
 
 	// byte order of the data
-	byte_order         endianness = byte_order::native;
+	byte_order
+		endianness {byte_order::native};
 
 	// single character type code (see table at start of this file)
-	u8                 type_code  = 0;
+	u8
+		type_code  {0};
 
 	// size of the data in bytes, e.g. bytes of an integer or characters in a
 	// unicode string
-	u32                size       = 0;
+	u32
+		size       {0};
 
 	// size of an item in bytes in this dtype (e.g. U16 is a 16-character
 	// unicode string, each character using 4 bytes.  hence, item_size = 64
 	// bytes).
-	u64                item_size  = 0;
+	u64
+		item_size  {0};
 
 	// numpy's shape has python 'int', which is commonly a 64bit integer. see
 	// python's sys.maxsize to get the maximum value, log(sys.maxsize,2)+1 will
 	// tell the number of bits used on a machine. Here, we simply assume that
 	// a u64 is enough.
-	std::vector<u64>   shape      = {};
+	std::vector<u64>
+		shape      {};
 
 	// structured arrays will contain fields, which are themselves dtypes
-	std::vector<dtype> fields     = {};
+	std::vector<dtype>
+		fields     {};
 
 	// quick and explicit test to check if this is a structured array
-	bool               is_structured_array() const { return fields.size() > 0; }
+	bool
+	is_structured_array() const
+	{
+		return fields.size() > 0;
+	}
 };
 
 
