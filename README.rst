@@ -47,7 +47,7 @@ Thus, either add the path to `ncr_numpy` to your list of includes or copy the
 header files to your preferred location. Also make sure to compile a zip backend
 implementation if you want to use npz files. Currently, `ncr_numpy` ships with
 an implementation that is based on `libzip <libzip>`_ in file
-`ncr/ncr_numpy_zip_impl_libzip.hpp <ncr/ncr_numpy_zip_impl_libzip.hpp>`_. A simple
+`ncr/ncr_zip_impl_libzip.hpp <ncr/ncr_zip_impl_libzip.hpp>`_. A simple
 `Makefile <examples/Makefile>`_ as well as a basic `CMakeLists.txt <examples/CMakeLists.txt>`_
 can be found in the `examples <examples>`_ folder.
 
