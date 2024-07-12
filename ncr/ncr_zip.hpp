@@ -1,5 +1,5 @@
 /*
- * ncr_numpy_zip - zip backend interface declaration
+ * ncr_zip - zip backend interface declaration
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -10,7 +10,7 @@
 #include <ncr/ncr_types.hpp>
 #include <filesystem>
 
-namespace ncr { namespace numpy {
+namespace ncr {
 
 /*
  * zip - namespace for arbitrary zip backend implementations
@@ -19,15 +19,12 @@ namespace ncr { namespace numpy {
  * custom rolled zlib backend, zlib-ng, minizip, libzip, etc. To provide some
  * flexibility in the backend and allow projects to avoid pulling in too many
  * dependencies (if they already use a backend), specify only an interface here.
- * It is up to the user to select which backend to use. With ncr_numpy ships
- * ncr_numpy_zip_impl_libzip.hpp, which implements a libzip backend.  Follow the
- * implementation there to implement alternative backends. Make sure to include
- * the appropriate one you want.
+ * It is up to the user to select which backend to use. For an example backend
+ * implementation, see ncr_zip_impl_libzip.hpp, which implements a libzip
+ * backend. Follow the implementation there to implement alternative backends.
+ * Make sure to include the appropriate one you want.
  */
 namespace zip {
-	// TODO: improve reporting of backend errors and pass-through of errors to
-	// numpy's API
-
 	// (partially) translated errors from within a zip backend. they are mostly
 	// inspired from working with libzip
 	enum class result {
@@ -101,7 +98,7 @@ namespace zip {
 		// (currently) the buffer is created locally and its livetime might be
 		// shorter than what the backend requires. With transfer of ownership, the
 		// backend can make sure that the buffer survives as long as required. For
-		// an example of this behavior, see ncr_numpy_zip_impl_libzip.hpp
+		// an example of this behavior, see ncr_zip_impl_libzip.hpp
 		result (*write)(backend_state *, const std::string filename, u8_vector &&buffer, bool compress, u32 compression_level);
 	};
 
@@ -110,4 +107,4 @@ namespace zip {
 
 } // zip::
 
-}}
+} // ncr::

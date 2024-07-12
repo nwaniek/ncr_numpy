@@ -109,7 +109,7 @@
 #include <ncr/ncr_types.hpp>
 #include <ncr/ncr_pyparser.hpp>
 #include <ncr/ncr_ndarray.hpp>
-#include <ncr/ncr_numpy_zip.hpp>
+#include <ncr/ncr_zip.hpp>
 
 #ifndef NCR_UTILS
 

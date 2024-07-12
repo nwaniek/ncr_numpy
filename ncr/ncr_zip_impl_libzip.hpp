@@ -1,5 +1,5 @@
 /*
- * ncr_numpy_zip_impl_libzip.hpp - ncr_numpy_zip backend based on libzip
+ * ncr_zip_impl_libzip.hpp - ncr_zip backend based on libzip
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -10,9 +10,9 @@
 #include <iostream>
 
 #include <zip.h>
-#include <ncr/ncr_numpy_zip.hpp>
+#include <ncr/ncr_zip.hpp>
 
-namespace ncr { namespace numpy { namespace zip {
+namespace ncr { namespace zip {
 
 
 /*
@@ -238,8 +238,9 @@ libzip_write(backend_state *bptr, const std::string name, u8_vector &&buffer, bo
 	if (compress) {
 		// Note: ZIP_CM_DEFLATE accepts compression levels 1 to 9, with 0
 		// indicating "default". the values origin from zlib. python's zlib
-		// backend until python 3.7 used zlib's "default" value, meaning numpy
-		// arrays were compressed most likely with the default value
+		// backend until python 3.7 used zlib's "default" value, meaning that
+		// for instance numpy arrays were compressed most likely with the
+		// default value
 		if (zip_set_file_compression(bptr->zip, fid, ZIP_CM_DEFLATE, compression_level) < 0) {
 			return result::error_compression_failed;
 		}
@@ -268,4 +269,4 @@ get_backend_interface()
 }
 
 
-}}} // ncr::numpy::zip
+}} // ncr::zip
