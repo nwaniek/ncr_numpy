@@ -1189,7 +1189,7 @@ struct savez_arg
  * save_npz - save arrays to an npz file
  */
 inline result
-to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool compress, bool overwrite=false)
+to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool compress, bool overwrite=false, u32 compression_level=0)
 {
 	namespace fs = std::filesystem;
 
@@ -1219,7 +1219,7 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 		u8_vector buffer;
 		to_npy_buffer(arg.array, buffer);
 		std::string name = arg.name + ".npy";
-		if (zip_interface.write(zip_state, name, std::move(buffer), compress, 0) != zip::result::ok) {
+		if (zip_interface.write(zip_state, name, std::move(buffer), compress, compression_level) != zip::result::ok) {
 			zip_interface.release(&zip_state);
 			return result::error_file_write_failed;
 		}
@@ -1249,9 +1249,9 @@ savez(std::filesystem::path filepath, std::vector<savez_arg> args, bool overwrit
  * savez_compressed - save to compressed npz file
  */
 inline result
-savez_compressed(std::filesystem::path filepath, std::vector<savez_arg> args, bool overwrite=false)
+savez_compressed(std::filesystem::path filepath, std::vector<savez_arg> args, bool overwrite=false, u32 compression_level = 0)
 {
-	return to_zip_archive(filepath, std::forward<decltype(args)>(args), true, overwrite);
+	return to_zip_archive(filepath, std::forward<decltype(args)>(args), true, overwrite, compression_level);
 }
 
 
@@ -1279,13 +1279,13 @@ savez(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray
  * position in the args vector
  */
 inline result
-savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false)
+savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false, u32 compression_level=0)
 {
 	std::vector<savez_arg> _args;
 	size_t i = 0;
 	for (auto &arg: args)
 		_args.push_back({std::string("arr_") + std::to_string(i++), arg});
-	return to_zip_archive(filepath, std::move(_args), true, overwrite);
+	return to_zip_archive(filepath, std::move(_args), true, overwrite, compression_level);
 }
 
 
