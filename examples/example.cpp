@@ -51,6 +51,10 @@ strpad(const std::string& str, size_t length)
 void
 hexdump(std::ostream& os, const u8_vector &data)
 {
+	// record current formatting
+	std::ios old_state(nullptr);
+	old_state.copyfmt(std::cout);
+
 	const size_t bytes_per_line = 16;
 	for (size_t offset = 0; offset < data.size(); offset += bytes_per_line) {
 		os << std::setw(8) << std::setfill('0') << std::hex << offset << ": ";
@@ -74,8 +78,8 @@ hexdump(std::ostream& os, const u8_vector &data)
 		}
 		os << "\n";
 	}
-	// reset to default
-	os << std::setfill(os.widen(' '));
+	// reset to previous state
+	std::cout.copyfmt(old_state);
 }
 
 
@@ -398,24 +402,26 @@ example_structured()
 	std::cout << "-------------------------------------\n";
 	{
 		// variable width, internally stored as std::vector
-		ncr::ucs4string str0{"Hello, World"};
-		ncr::utf8string str1{str0};
+		ncr::ucs4string str0 = ncr::to_ucs4("Hello, World");
+		ncr::utf8string str1 = ncr::to_utf8(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
 		// variable width, internally stored as std::vector
-		ncr::utf8string str0{"Hello, World"};
-		ncr::ucs4string str1{str0};
+		ncr::utf8string str0 = ncr::to_utf8("Hello, World");
+		ncr::ucs4string str1 = ncr::to_ucs4(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		ncr::ucs4string<20> str0{"Hello, World"};
-		ncr::utf8string<20> str1{str0};
+		ncr::ucs4string<20> str0 = ncr::to_ucs4<20>("Hello, World");
+		ncr::utf8string<20> str1 = ncr::to_utf8(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		ncr::utf8string<20> str0{"Hello, World"};
-		ncr::ucs4string<20> str1{str0};
+		ncr::utf8string<20> str0 = ncr::to_utf8<20>("Hello, World");
+		// Note: for fixed-size ucs4 strings, to_ucs4 requires at least one
+		//       template argument.
+		ncr::ucs4string<20> str1 = ncr::to_ucs4<20>(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	std::cout << "\n";
@@ -428,8 +434,10 @@ example_structured()
 	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
 
 	std::cout << arr.type() << "\n";
-	std::cout << "sizeof(student_t) = " << sizeof(student_t) << "\n";
-	std::cout << "arr.item_size = " << arr.type().item_size << "\n";
+	std::cout << "sizeof(student_t):  " << sizeof(student_t) << "\n";
+	std::cout << "arr.item_size:      " << arr.type().item_size << "\n";
+	std::cout << "student_t is a POD: " << (std::is_standard_layout_v<student_t> && std::is_trivial_v<student_t>) << "\n";
+
 
 	// numpy uses C's memory layout for structured arrays. The array's data can
 	// therefore be read directly into a suitable variable such as a POD struct
@@ -446,9 +454,80 @@ example_structured()
 			// don't forget to return (see definition of apply for details)
 			return student;
 		});
+}
 
 
+/*
+ * gdp_record_t - example struct for nested structured arrays
+ */
+#pragma pack(push, 1)
+struct country_gdp_record_t
+{
+	ncr::ucs4string<16>
+		country_name;
 
+	u64
+		gdp;
+};
+#pragma pack(pop)
+
+
+/*
+ * year_record_t - example struct for nested structured arrays
+ */
+#pragma pack(push, 1)
+struct year_gdp_record_t
+{
+	u32
+		year;
+
+	country_gdp_record_t
+		c1, c2, c3;
+};
+#pragma pack(pop)
+
+
+/*
+ * example_nested - read a nested structured array
+ */
+void
+example_nested()
+{
+	std::cout << "Examples for working with nested structured arrays\n";
+	std::cout << "--------------------------------------------------\n";
+
+	ncr::ndarray arr;
+	ncr::numpy::npyfile npy;
+	ncr::numpy::from_npy("assets/in/nested.npy", arr, &npy);
+
+	// always make sure that the sizes correspond! To achieve this, it might not
+	// be sufficient to simply have POD data types, but sometimes also padding
+	// needs to be removed. See the #pragma pack around struct year_gdp_record_t
+	// for an example how to avoid padding.
+	std::cout << arr.type() << "\n";
+	std::cout << "sizeof(year_gdp_record_t):     " << sizeof(year_gdp_record_t) << "\n";
+	std::cout << "arr.item_size:                 " << arr.type().item_size << "\n";
+
+	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+	std::cout << "year_gdp_record_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+
+	std::ios old_state(nullptr);
+	old_state.copyfmt(std::cout);
+	std::cout << "Top 3 countries w.r.t GDP:\n";
+	arr.apply<year_gdp_record_t>(
+		[](year_gdp_record_t &record) {
+			std::cout << "  " << record.year << "\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+			// don't forget to return (see definition of apply for details)
+			return record;
+		});
+	std::cout.copyfmt(old_state);
+
+
+	// TODO: example for nested structure that gets read into padded/non-packed
+	//       POD.
 }
 
 
@@ -463,6 +542,9 @@ main()
 	example_advanced_api();  std::cout << "\n";
 	example_serialization(); std::cout << "\n";
 	example_facade();        std::cout << "\n";
-	example_structured();
+	example_structured();    std::cout << "\n";
+	example_nested();
+
+
 	return 0;
 }
