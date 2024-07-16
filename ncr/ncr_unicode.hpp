@@ -11,6 +11,7 @@
 #include <string>
 #include <ncr/ncr_types.hpp>
 
+namespace ncr {
 
 // forward declaration
 template <size_t N = 0> struct utf8string;
@@ -250,3 +251,5 @@ struct utf8string
 	}
 };
 
+
+} // ncr

@@ -378,7 +378,7 @@ struct student_t
 	// each student has a name, stored as a unicode string with UCS-4 encoding
 	// per character (see https://numpy.org/doc/stable/reference/arrays.dtypes.html
 	// for more details)
-	ucs4string<16>
+	ncr::ucs4string<16>
 		name;
 
 	// each student has two grades, stored as a 64bit float
@@ -398,24 +398,24 @@ example_structured()
 	std::cout << "-------------------------------------\n";
 	{
 		// variable width, internally stored as std::vector
-		ucs4string str0{"Hello, World"};
-		utf8string str1{str0};
+		ncr::ucs4string str0{"Hello, World"};
+		ncr::utf8string str1{str0};
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
 		// variable width, internally stored as std::vector
-		utf8string str0{"Hello, World"};
-		ucs4string str1{str0};
+		ncr::utf8string str0{"Hello, World"};
+		ncr::ucs4string str1{str0};
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		ucs4string<20> str0{"Hello, World"};
-		utf8string<20> str1{str0};
+		ncr::ucs4string<20> str0{"Hello, World"};
+		ncr::utf8string<20> str1{str0};
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		utf8string<20> str0{"Hello, World"};
-		ucs4string<20> str1{str0};
+		ncr::utf8string<20> str0{"Hello, World"};
+		ncr::ucs4string<20> str1{str0};
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	std::cout << "\n";
