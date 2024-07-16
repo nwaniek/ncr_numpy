@@ -226,14 +226,14 @@ inline void
 serialize_dtype(std::ostream &s, const dtype &dtype)
 {
 	s << "('" << dtype.name << "', ";
-	if (!dtype.is_structured_array())
-		serialize_dtype_typestr(s, dtype);
-	else
+	if (dtype.is_structured_array())
 		serialize_dtype_fields(s, dtype);
-
-	if (dtype.shape.size() > 0) {
-		s << ", ";
-		serialize_shape(s, dtype.shape);
+	else {
+		serialize_dtype_typestr(s, dtype);
+		if (dtype.shape.size() > 0) {
+			s << ", ";
+			serialize_shape(s, dtype.shape);
+		}
 	}
 	s << ")";
 }
@@ -243,10 +243,10 @@ inline void
 serialize_dtype_descr(std::ostream &s, const dtype &dtype)
 {
 	s << "'descr': ";
-	if (!dtype.is_structured_array())
-		serialize_dtype_typestr(s, dtype);
-	else
+	if (dtype.is_structured_array())
 		serialize_dtype_fields(s, dtype);
+	else
+		serialize_dtype_typestr(s, dtype);
 }
 
 inline void
@@ -256,14 +256,16 @@ serialize_fortran_order(std::ostream &s, storage_order o)
 }
 
 
-
 // operator<< usually used in std::cout
 // TODO: remove or disable?
 inline std::ostream&
 operator<< (std::ostream &os, const dtype &dtype)
 {
 	std::ostringstream s;
-	serialize_dtype(s, dtype);
+	if (dtype.is_structured_array())
+		serialize_dtype_fields(s, dtype);
+	else
+		serialize_dtype_typestr(s, dtype);
 	os << s.str();
 	return os;
 }

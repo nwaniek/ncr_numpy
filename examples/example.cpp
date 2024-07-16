@@ -120,10 +120,11 @@ example_ndarray()
 
 	ncr::ndarray array({2, 2}, ncr::dtype_float32());
 	std::cout << "\nshape: ";
-
-	// use ncr::numpy's function for pretty printing
 	ncr::serialize_shape(std::cout, array.shape());
-	std::cout << "\n\n";
+	std::cout << "\ndtype: ";
+	ncr::serialize_dtype(std::cout, array.type());
+	std::cout << "\n";
+	std::cout << array.get_type_description() << "\n";
 
 	// read (and write)
 	std::cout << "array before modification\n";
@@ -458,10 +459,12 @@ example_structured()
 
 
 /*
- * gdp_record_t - example struct for nested structured arrays
+ * country_gdp_record_packed_t - example struct for nested structured arrays
+ *
+ * This struct is packed, i.e. the compiler is supposed to remove any padding
  */
 #pragma pack(push, 1)
-struct country_gdp_record_t
+struct country_gdp_record_packed_t
 {
 	ncr::ucs4string<16>
 		country_name;
@@ -473,9 +476,43 @@ struct country_gdp_record_t
 
 
 /*
- * year_record_t - example struct for nested structured arrays
+ * country_gdp_record_t - example struct for nested structured arrays
+ *
+ * This struct is *not* packed, i.e. the compiler can add padding
+ */
+struct country_gdp_record_t
+{
+	ncr::ucs4string<16>
+		country_name;
+
+	u64
+		gdp;
+};
+
+
+
+/*
+ * year_gdp_record_packed_t - example struct for nested structured arrays
+ *
+ * This struct is packed, i.e. the compiler is supposed to remove any padding
  */
 #pragma pack(push, 1)
+struct year_gdp_record_packed_t
+{
+	u32
+		year;
+
+	country_gdp_record_packed_t
+		c1, c2, c3;
+};
+#pragma pack(pop)
+
+
+/*
+ * year_gdp_record_t - example struct for nested structured arrays
+ *
+ * This struct is *not* packed, i.e. the compiler can add padding
+ */
 struct year_gdp_record_t
 {
 	u32
@@ -484,7 +521,6 @@ struct year_gdp_record_t
 	country_gdp_record_t
 		c1, c2, c3;
 };
-#pragma pack(pop)
 
 
 /*
@@ -500,22 +536,22 @@ example_nested()
 	ncr::numpy::npyfile npy;
 	ncr::numpy::from_npy("assets/in/nested.npy", arr, &npy);
 
-	// always make sure that the sizes correspond! To achieve this, it might not
-	// be sufficient to simply have POD data types, but sometimes also padding
-	// needs to be removed. See the #pragma pack around struct year_gdp_record_t
-	// for an example how to avoid padding.
+	// make sure that the sizes correspond when using methods that cast (e.g.
+	// apply, value)! To achieve this, it might not be sufficient to simply have
+	// POD data types, but sometimes also padding needs to be removed. See the
+	// #pragma pack around struct year_gdp_record_t for an example how to avoid
+	// padding.
 	std::cout << arr.type() << "\n";
-	std::cout << "sizeof(year_gdp_record_t):     " << sizeof(year_gdp_record_t) << "\n";
-	std::cout << "arr.item_size:                 " << arr.type().item_size << "\n";
-
-	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
-	std::cout << "year_gdp_record_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+	std::cout << "sizeof(year_gdp_record_t):            " << sizeof(year_gdp_record_packed_t) << "\n";
+	std::cout << "arr.item_size:                        " << arr.type().item_size << "\n";
+	std::cout << "country_gdp_record_packed_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
+	std::cout << "year_gdp_record_packed_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
 
 	std::ios old_state(nullptr);
 	old_state.copyfmt(std::cout);
 	std::cout << "Top 3 countries w.r.t GDP:\n";
-	arr.apply<year_gdp_record_t>(
-		[](year_gdp_record_t &record) {
+	arr.apply<year_gdp_record_packed_t>(
+		[](year_gdp_record_packed_t &record) {
 			std::cout << "  " << record.year << "\n";
 			std::cout << "    " << strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
 			std::cout << "    " << strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
@@ -526,8 +562,20 @@ example_nested()
 	std::cout.copyfmt(old_state);
 
 
-	// TODO: example for nested structure that gets read into padded/non-packed
-	//       POD.
+	// padded structs, print some further information and a hexdump
+	std::cout << "\n";
+	std::cout << "Example of nested structured array when working with potentially padded structs\n";
+	std::cout << "sizeof(year_gdp_record_t):     " << sizeof(year_gdp_record_t) << "\n";
+	std::cout << "arr.item_size:                 " << arr.type().item_size << "\n";
+	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+	std::cout << "year_gdp_record_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+	std::cout << "type description string:       " << arr.get_type_description() << "\n";
+
+	// the hexdump can be useful to compare the type description create by
+	// ncr::ndarray and the one stored in the file
+	u8_vector buf_in;
+	buffer_from_file("assets/in/nested.npy", buf_in);
+	hexdump(std::cout, buf_in);
 }
 
 

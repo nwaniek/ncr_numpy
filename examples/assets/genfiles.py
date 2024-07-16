@@ -26,7 +26,7 @@ np.save('in/structured.npy', x)
 np.savez('in/structured.npz', structured_array=x)
 
 # nested structured array
-dt_nested = np.dtype([('y0', np.uint32),
+dt_nested = np.dtype([('year', np.uint32),
                       ('countries', [
                           ('c1', [('country', np.str_, 16), ('gdp', np.uint64)]),
                           ('c2', [('country', np.str_, 16), ('gdp', np.uint64)]),
