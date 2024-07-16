@@ -27,7 +27,7 @@ template <size_t N = 0> struct utf8string;
  * Thus, each element in data represents one code point.
  *
  * Example: 'A' (U+0041) is stored as '0x00000041'
- *			'€' (U+20AC) is stored as '0x000020AC'
+ *          '€' (U+20AC) is stored as '0x000020AC'
  */
 template <size_t N = 0>
 struct ucs4string
@@ -174,7 +174,7 @@ struct ucs4string
  * code points, but rather a byte representation of these code points
  *
  * Example: 'A' (U+0041) is stored as 0x41 (1 byte)
- *			'€' (U+20AC) is stored as 0xE2 0x82 0xAC (3 bytes)
+ *          '€' (U+20AC) is stored as 0xE2 0x82 0xAC (3 bytes)
  */
 template <size_t N>
 struct utf8string
