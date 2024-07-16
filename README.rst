@@ -116,16 +116,16 @@ a npy file.
 
     struct student_t
     {
-	    ucs4string<16> name;
-	    f64 grades[2];
+        ucs4string<16> name;
+        f64 grades[2];
     };
 
-	ncr::ndarray arr;
-	ncr::numpy::npyfile npy;
-	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
+    ncr::ndarray arr;
+    ncr::numpy::npyfile npy;
+    ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
 
-	student_t &student = arr.value<student_t>(0);
-	std::cout << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
+    student_t &student = arr.value<student_t>(0);
+    std::cout << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
 
 
 See `example.cpp <examples/example.cpp>`_ for further and longer examples on how
