@@ -8,6 +8,7 @@
 #include <ncr/ncr_numpy.hpp>
 #include <ncr/ncr_ndarray.hpp>
 #include <ncr/ncr_zip_impl_libzip.hpp>
+#include <ncr/ncr_unicode.hpp>
 
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR 0
@@ -191,7 +192,7 @@ example_simple_api(size_t padwidth = 30)
 	std::cout << arr.transform<c64>(ncr::bswap<c64>, 1, 1) << "\n";
 
 	// can also call apply() and transform each value in the array. Note that
-	// that are different variants of apply, which might be useful when working
+	// there are different variants of apply, which might be useful when working
 	// with structured arrays
 	arr.apply<c64>(ncr::bswap<c64>);
 	// after the previous line, all values are byteswapped within the array. we
@@ -357,15 +358,81 @@ example_facade()
 }
 
 
+/*
+ * student_t - example struct for the structured.npy file
+ *
+ * The numpy file 'structured.npy' contains
+ *     array([('Sarah', [8., 7.]), ('John', [6., 7.])],
+ *           dtype=[('name', '<U16'), ('grades', '<f8', (2,))])
+ *
+ * which means the array contains structured arrays of the format
+ *
+ *		name  : unicode string of at most 16 characters
+ *		grades: 2 64bit float values
+ *
+ * Because numpy uses C memory layout for structured arrays, this can be mapped
+ * directly to a POD struct.
+ */
+struct student_t
+{
+	// each student has a name, stored as a unicode string with UCS-4 encoding
+	// per character (see https://numpy.org/doc/stable/reference/arrays.dtypes.html
+	// for more details)
+	ucs4string<16>
+		name;
+
+	// each student has two grades, stored as a 64bit float
+	f64
+		grades[2];
+};
+
+
+/*
+ * example_structured - examples for working with structured arrays
+ */
+void
+example_structured()
+{
+	std::cout << "Examples for structured arrays\n";
+	std::cout << "------------------------------\n";
+
+	ncr::ndarray arr;
+	ncr::numpy::npyfile npy;
+	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
+
+	std::cout << arr.type() << "\n";
+	std::cout << "sizeof(student_t) = " << sizeof(student_t) << "\n";
+	std::cout << "arr.item_size = " << arr.type().item_size << "\n";
+
+	// numpy uses C's memory layout for structured arrays. The array's data can
+	// therefore be read directly into a suitable variable such as a POD struct
+	std::cout << "Explicitly accessing data:\n";
+	student_t &student = arr.value<student_t>(0);
+	std::cout << "  " << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
+
+	// we can also use the apply function and a lambda to do this for all
+	// students
+	std::cout << "Walking over all items in the array:\n";
+	arr.apply<student_t>(
+		[](student_t &student) {
+			std::cout << "  " << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
+			// don't forget to return (see definition of apply for details)
+			return student;
+		});
+}
+
+
 int
 main()
 {
+	setlocale(LC_ALL, "");
 	std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
 
 	example_ndarray();       std::cout << "\n";
 	example_simple_api();    std::cout << "\n";
 	example_advanced_api();  std::cout << "\n";
 	example_serialization(); std::cout << "\n";
-	example_facade();
+	example_facade();        std::cout << "\n";
+	example_structured();
 	return 0;
 }
