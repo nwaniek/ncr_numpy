@@ -108,8 +108,28 @@ names of the arrays and the arrays themselves.
 This example uses `ncr::serialize_shape`, which is a utility function to turn
 the shape of an ndarray into something readable.
 
-See `example.cpp <examples/example.cpp>`_ for further examples on how to use
-`ncr_numpy`.
+Working with (known) structured arrays is straightforward. The following example
+assumes that student data, with a name and two grades per student, are stored in
+a npy file.
+
+.. code-block:: c++
+
+    struct student_t
+    {
+	    ucs4string<16> name;
+	    f64 grades[2];
+    };
+
+	ncr::ndarray arr;
+	ncr::numpy::npyfile npy;
+	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
+
+	student_t &student = arr.value<student_t>(0);
+	std::cout << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
+
+
+See `example.cpp <examples/example.cpp>`_ for further and longer examples on how
+to use `ncr_numpy`.
 
 
 Design Principles
