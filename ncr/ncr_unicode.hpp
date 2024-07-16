@@ -1,6 +1,3 @@
-#ifndef _756006fd62e24fafa0a9cf6ec8c53ce3_
-#define _756006fd62e24fafa0a9cf6ec8c53ce3_
-
 /*
  * ncr_unicode - utilities for working with unicode (UTF-8, UCS-4) strings
  *
@@ -252,6 +249,4 @@ struct utf8string
         return os;
     }
 };
-
-#endif /* _756006fd62e24fafa0a9cf6ec8c53ce3_ */
 
