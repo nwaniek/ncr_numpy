@@ -393,6 +393,33 @@ struct student_t
 void
 example_structured()
 {
+
+	std::cout << "Basic tests for utf8 and ucs4 strings\n";
+	std::cout << "-------------------------------------\n";
+	{
+		// variable width, internally stored as std::vector
+		ucs4string str0{"Hello, World"};
+		utf8string str1{str0};
+		std::cout << str0 << " :: " << str1 << "\n";
+	}
+	{
+		// variable width, internally stored as std::vector
+		utf8string str0{"Hello, World"};
+		ucs4string str1{str0};
+		std::cout << str0 << " :: " << str1 << "\n";
+	}
+	{
+		ucs4string<20> str0{"Hello, World"};
+		utf8string<20> str1{str0};
+		std::cout << str0 << " :: " << str1 << "\n";
+	}
+	{
+		utf8string<20> str0{"Hello, World"};
+		ucs4string<20> str1{str0};
+		std::cout << str0 << " :: " << str1 << "\n";
+	}
+	std::cout << "\n";
+
 	std::cout << "Examples for structured arrays\n";
 	std::cout << "------------------------------\n";
 
@@ -419,6 +446,9 @@ example_structured()
 			// don't forget to return (see definition of apply for details)
 			return student;
 		});
+
+
+
 }
 
 
