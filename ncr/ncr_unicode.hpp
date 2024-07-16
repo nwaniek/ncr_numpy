@@ -188,6 +188,7 @@ struct utf8string
 
 	utf8string() {}
 
+
 	utf8string(const std::array<u8, N> &utf8)
 	{
 		if constexpr (N != 0)
@@ -195,7 +196,8 @@ struct utf8string
 	}
 
 
-	utf8string(const std::vector<u8> &utf8) {
+	utf8string(const std::vector<u8> &utf8)
+	{
 		if constexpr (N == 0) {
 			data.assign(utf8.begin(), utf8.end());
 		}
@@ -208,7 +210,8 @@ struct utf8string
 	}
 
 
-	utf8string(const std::string &utf8) {
+	utf8string(const std::string &utf8)
+	{
 		if constexpr (N == 0) {
 			data.assign(utf8.begin(), utf8.end());
 		}
@@ -221,7 +224,8 @@ struct utf8string
 	}
 
 
-	utf8string(const ucs4string<N> &ucs4) {
+	utf8string(const ucs4string<N> &ucs4)
+	{
 		std::string tmp = ucs4.to_string();
 		if constexpr (N == 0) {
 			data.assign(tmp.begin(), tmp.end());
