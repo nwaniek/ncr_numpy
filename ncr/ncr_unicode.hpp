@@ -27,7 +27,7 @@ template <size_t N = 0> struct utf8string;
  * Thus, each element in data represents one code point.
  *
  * Example: 'A' (U+0041) is stored as '0x00000041'
- *          '€' (U+20AC) is stored as '0x000020AC'
+ *			'€' (U+20AC) is stored as '0x000020AC'
  */
 template <size_t N = 0>
 struct ucs4string
@@ -71,49 +71,49 @@ struct ucs4string
 	ucs4string(const utf8string<M> &utf8) { from_utf8(utf8.to_string()); }
 
 
-    /*
-     * from_utf8 - fill the string from a utf8 string
-     */
-    void
-    from_utf8(const std::string &utf8)
-    {
+	/*
+	 * from_utf8 - fill the string from a utf8 string
+	 */
+	void
+	from_utf8(const std::string &utf8)
+	{
 		if constexpr (N == 0)
 			data.clear();
 		else
 			data = {};
 
-        size_t i = 0;
-        size_t n = 0;
-        while (i < utf8.size()) {
-            u32 codepoint = 0;
-            u8 byte       = utf8[i];
+		size_t i = 0;
+		size_t n = 0;
+		while (i < utf8.size()) {
+			u32 codepoint = 0;
+			u8 byte		  = utf8[i];
 
-            if (byte <= 0x7F) {
-                codepoint = byte;
-                i += 1;
-            }
-            else if (byte <= 0xBF) {
-                throw std::runtime_error("Invalid UTF-8 byte sequence.");
-            }
-            else if (byte <= 0xDF) {
-                codepoint = byte & 0x1F;
-                codepoint = (codepoint << 6) | (utf8[i + 1] & 0x3F);
-                i += 2;
-            }
-            else if (byte <= 0xEF) {
-                codepoint = byte & 0x0F;
-                codepoint = (codepoint << 12) | ((utf8[i + 1] & 0x3F) << 6) | (utf8[i + 2] & 0x3F);
-                i += 3;
-            }
-            else if (byte <= 0xF7) {
-                codepoint = byte & 0x07;
-                codepoint = (codepoint << 18) | ((utf8[i + 1] & 0x3F) << 12) |
-                            ((utf8[i + 2] & 0x3F) << 6) | (utf8[i + 3] & 0x3F);
-                i += 4;
-            }
-            else {
-                throw std::runtime_error("Invalid UTF-8 byte sequence.");
-            }
+			if (byte <= 0x7F) {
+				codepoint = byte;
+				i += 1;
+			}
+			else if (byte <= 0xBF) {
+				throw std::runtime_error("Invalid UTF-8 byte sequence.");
+			}
+			else if (byte <= 0xDF) {
+				codepoint = byte & 0x1F;
+				codepoint = (codepoint << 6) | (utf8[i + 1] & 0x3F);
+				i += 2;
+			}
+			else if (byte <= 0xEF) {
+				codepoint = byte & 0x0F;
+				codepoint = (codepoint << 12) | ((utf8[i + 1] & 0x3F) << 6) | (utf8[i + 2] & 0x3F);
+				i += 3;
+			}
+			else if (byte <= 0xF7) {
+				codepoint = byte & 0x07;
+				codepoint = (codepoint << 18) | ((utf8[i + 1] & 0x3F) << 12) |
+					((utf8[i + 2] & 0x3F) << 6) | (utf8[i + 3] & 0x3F);
+				i += 4;
+			}
+			else {
+				throw std::runtime_error("Invalid UTF-8 byte sequence.");
+			}
 
 			if constexpr (N == 0) {
 				data.push_back(codepoint);
@@ -123,8 +123,8 @@ struct ucs4string
 					throw std::runtime_error("Input string exceeds fixed-width UCS-4 string size.");
 				data[n++] = codepoint;
 			}
-        }
-    }
+		}
+	}
 
 
 	/*
@@ -133,35 +133,35 @@ struct ucs4string
 	std::string
 	to_string() const
 	{
-        std::string utf8_string;
-        for (auto ch : data) {
-            if (ch == 0) break;
+		std::string utf8_string;
+		for (auto ch : data) {
+			if (ch == 0) break;
 
-            if (ch <= 0x7F) {
-                utf8_string += static_cast<char>(ch);
-            } else if (ch <= 0x7FF) {
-                utf8_string += static_cast<char>(0xC0 | (ch >> 6));
-                utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
-            } else if (ch <= 0xFFFF) {
-                utf8_string += static_cast<char>(0xE0 | (ch >> 12));
-                utf8_string += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
-                utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
-            } else if (ch <= 0x10FFFF) {
-                utf8_string += static_cast<char>(0xF0 | (ch >> 18));
-                utf8_string += static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
-                utf8_string += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
-                utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
-            }
-        }
-        return utf8_string;
+			if (ch <= 0x7F) {
+				utf8_string += static_cast<char>(ch);
+			} else if (ch <= 0x7FF) {
+				utf8_string += static_cast<char>(0xC0 | (ch >> 6));
+				utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
+			} else if (ch <= 0xFFFF) {
+				utf8_string += static_cast<char>(0xE0 | (ch >> 12));
+				utf8_string += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+				utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
+			} else if (ch <= 0x10FFFF) {
+				utf8_string += static_cast<char>(0xF0 | (ch >> 18));
+				utf8_string += static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+				utf8_string += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+				utf8_string += static_cast<char>(0x80 | (ch & 0x3F));
+			}
+		}
+		return utf8_string;
 	}
 
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const ucs4string<N> &str) {
-        os << str.to_string();
-        return os;
-    }
+	friend std::ostream&
+	operator<<(std::ostream& os, const ucs4string<N> &str) {
+		os << str.to_string();
+		return os;
+	}
 };
 
 
@@ -174,7 +174,7 @@ struct ucs4string
  * code points, but rather a byte representation of these code points
  *
  * Example: 'A' (U+0041) is stored as 0x41 (1 byte)
- *          '€' (U+20AC) is stored as 0xE2 0x82 0xAC (3 bytes)
+ *			'€' (U+20AC) is stored as 0xE2 0x82 0xAC (3 bytes)
  */
 template <size_t N>
 struct utf8string
@@ -233,20 +233,20 @@ struct utf8string
 	}
 
 
-    /*
-     * to_string - convert to std::string
-     */
-    std::string
-    to_string() const
-    {
-        return std::string(data.begin(), data.end());
-    }
+	/*
+	 * to_string - convert to std::string
+	 */
+	std::string
+	to_string() const
+	{
+		return std::string(data.begin(), data.end());
+	}
 
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const utf8string<N> &utf8_str) {
-        os << utf8_str.to_string();
-        return os;
-    }
+	friend std::ostream&
+	operator<<(std::ostream& os, const utf8string<N> &utf8_str) {
+		os << utf8_str.to_string();
+		return os;
+	}
 };
 
