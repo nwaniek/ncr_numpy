@@ -9,7 +9,7 @@
 
 #include <type_traits>
 #include <string>
-#include <ncr/ncr_types.hpp>
+#include "types.hpp"
 
 namespace ncr {
 

@@ -1,5 +1,5 @@
 /*
- * ncr_pyparser - a simple parser for python data
+ * pyparser - a simple parser for python data
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -8,79 +8,12 @@
 #pragma once
 
 #include <memory>
-#include <ncr/ncr_types.hpp>
+#include <ncr/common/types.hpp>
+#include <ncr/common/type_operators.hpp>
+#include <ncr/common/utils.hpp>
 
 
-namespace ncr {
-
-#ifndef NCR_UTILS
-/*
- * memory_guard - A simple memory scope guard
- *
- * This template allows to pass in several pointers which will be deleted when
- * the guard goes out of scope. This is the same as using a unique_ptr into
- * which a pointer is moved, but with slightly less verbose syntax. This is
- * particularly useful to scope members of structs / classes.
- *
- * Example:
- *
- *     struct MyStruct {
- *         SomeType *var;
- *
- *         void some_function
- *         {
- *             // for some reason, var should live only as long as some_function
- *             // is running. This can be useful in the case of recursive
- *             // functions to which sending all the context or state variables
- *             // is inconvenient, and save them in the surrounding struct. An
- *             // alternative, maybe even a preferred way, is to use PODs that
- *             // contain state and use free functions. Still, the memory guard
- *             // might be handy
- *             var = new SomeType{};
- *             memory_guard<SomeType> guard(var);
- *
- *             ...
- *
- *             // the guard will call delete on `var' once it drops out of scope
- *         }
- *     };
- *
- * Example with unique_ptr:
- *
- *            // .. struct is same as above
- *            var = new SomeType{};
- *            std::unique_ptr<SomeType>(std::move(*var));
- *
- * Yes, this only saves a few characters to type. However, memory_guard works
- * with an arbitrary number of arguments.
- */
-template <typename... Ts>
-struct memory_guard;
-
-template <>
-struct memory_guard<> {};
-
-template <typename T, typename... Ts>
-struct memory_guard<T, Ts...> : memory_guard<Ts...>
-{
-	T *ptr = nullptr;
-	memory_guard(T *_ptr, Ts *...ptrs) : memory_guard<Ts...>(ptrs...), ptr(_ptr) {}
-	~memory_guard() { if (ptr) delete ptr; }
-};
-
-
-/*
- * to_underlying - convert a type to its underlying type
- *
- * This will be available in C++23 as std::to_underlying. Until then, use the
- * implementation here.
- */
-template <typename E>
-constexpr typename std::underlying_type<E>::type
-to_underlying(E e) noexcept {
-	return static_cast<typename std::underlying_type<E>::type>(e);
-}
-#endif
+namespace ncr { namespace numpy {
 
 
 inline bool
@@ -194,20 +127,12 @@ struct token {
 };
 
 
-// TODO: only for debug purposes
-inline std::ostream&
-operator<<(std::ostream &os, const u8_const_subrange &range)
-{
-	for (auto it = range.begin(); it != range.end(); ++it)
-		os << (*it);
-	return os;
-}
 
 /*
  * TODO: for debugging purposes only
  */
 inline std::ostream&
-operator<<(std::ostream &os, const ncr::token::type &type)
+operator<<(std::ostream &os, const token::type &type)
 {
 	using namespace ncr;
 
@@ -228,15 +153,17 @@ operator<<(std::ostream &os, const ncr::token::type &type)
 	case token::type::bool_literal:    os << "boolean";        return os;
 	case token::type::none_literal:    os << "none";           return os;
 	case token::type::unknown:         os << "unknown";        return os;
+	// TODO: maybe remove default case, it's mostly a bad idea to have one
 	default:                           os.setstate(std::ios_base::failbit);
 	}
 	return os;
 }
 
+
 inline std::ostream&
-operator<<(std::ostream &os, const ncr::token &token)
+operator<<(std::ostream &os, const token &token)
 {
-	using namespace ncr;
+	using ncr::operator<<;
 	os << "token type: " << token.ttype << ", value: " << token.range();
 	return os;
 }
@@ -1129,4 +1056,4 @@ struct pyparser
 };
 
 
-} // ncr
+}} // ncr::numpy

@@ -8,7 +8,7 @@
 #pragma once
 
 #include <bit>
-#include <ncr/ncr_types.hpp>
+#include "types.hpp"
 
 
 // figure out if there are builtins or system functions available for byte

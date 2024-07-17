@@ -1,5 +1,5 @@
 /*
- * ncr_zip_impl_libzip.hpp - ncr_zip backend based on libzip
+ * zip_libzip.hpp - ncr zip backend based on libzip
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -10,7 +10,8 @@
 #include <iostream>
 
 #include <zip.h>
-#include <ncr/ncr_zip.hpp>
+#include "../zip.hpp"
+
 
 namespace ncr { namespace zip {
 
@@ -114,6 +115,8 @@ libzip_open(backend_state *state, const std::filesystem::path filepath, filemode
 	if ((state->zip = zip_open(filepath.c_str(), flags, &err)) == nullptr) {
 		zip_error_t error;
 		zip_error_init_with_code(&error, err);
+
+		// TODO: set a local error string that is part of the zip interface
 		std::cerr << "cannot open zip archive " << filepath << ": " << zip_error_strerror(&error) << "\n";
 		return result::error_invalid_filepath;
 	}

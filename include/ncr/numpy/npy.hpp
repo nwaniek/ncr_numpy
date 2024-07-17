@@ -1,5 +1,5 @@
 /*
- * ncr_numpy - read/write numpy files
+ * npy - read/write numpy files
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -105,32 +105,11 @@
 #include <variant>
 #include <unordered_set>
 
-#include <ncr/ncr_bits.hpp>
-#include <ncr/ncr_types.hpp>
-#include <ncr/ncr_pyparser.hpp>
-#include <ncr/ncr_ndarray.hpp>
-#include <ncr/ncr_zip.hpp>
-
-#ifndef NCR_UTILS
-
-
-/*
- * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
- *
- * This macro expands into functions for bit-wise and binary operations on
- * enums, e.g. given two enum values a and b, one might want to write `a |= b;`.
- * With the macro below, this will be possible.
- */
-#define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
-	inline ENUM_T operator~(ENUM_T a) { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
-	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
-	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); }
-
-#endif
+#include <ncr/common/types.hpp>
+#include <ncr/common/bits.hpp>
+#include <ncr/common/zip.hpp>
+#include "pyparser.hpp"
+#include "ndarray.hpp"
 
 
 namespace ncr { namespace numpy {
@@ -395,23 +374,6 @@ operator<<(std::ostream &os, const byte_order &order)
 	return os;
 }
 
-
-inline std::ostream&
-operator<<(std::ostream &os, const u8_const_subrange &range)
-{
-	for (auto it = range.begin(); it != range.end(); ++it)
-		os << (*it);
-	return os;
-}
-
-
-inline std::ostream&
-operator<<(std::ostream &os, const u8_vector &vec)
-{
-	for (auto it = vec.begin(); it != vec.end(); ++it)
-		os << (*it);
-	return os;
-}
 
 
 /*
@@ -693,7 +655,7 @@ parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &sha
 	// take much time to convert and thus have negligible impact on performance.
 
 	// try to parse the header
-	ncr::pyparser parser;
+	pyparser parser;
 	auto pres = parser.parse(finfo.header);
 	if (!pres)
 		return result::error_header_parsing_error;
@@ -886,17 +848,6 @@ is_zip_file(std::istream &is)
 }
 
 
-inline u64
-get_file_size(std::ifstream &is)
-{
-	auto ip = is.tellg();
-	is.seekg(0, std::ios::end);
-	auto res = is.tellg();
-	is.seekg(ip);
-	return static_cast<u64>(res);
-}
-
-
 inline result
 from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 {
@@ -1010,7 +961,7 @@ from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
 	// file into a vector (which is not the fastest), but then working with it
 	// is reasonably simple
 	f.seekg(0);
-	auto filesize = get_file_size(f);
+	auto filesize = ncr::get_file_size(f);
 	u8_vector buf(filesize);
 #if NCR_FSTREAM_UNSAFE_READ
 	f.read(reinterpret_cast<char*>(buf.data()), filesize);

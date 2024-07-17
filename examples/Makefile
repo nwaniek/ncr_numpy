@@ -1,7 +1,7 @@
 STD      := -std=c++20
 WARNINGS := -Wall -Wextra -pedantic
 
-INCS     := -I.. `pkg-config --cflags libzip`
+INCS     := -I../include `pkg-config --cflags libzip`
 LIBS     := `pkg-config --libs libzip`
 
 VERSION       := $(strip $(shell cat ../VERSION))

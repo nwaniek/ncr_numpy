@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include <ncr/ncr_types.hpp>
+#include "types.hpp"
 #include <filesystem>
 
 namespace ncr {

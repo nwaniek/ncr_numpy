@@ -1,5 +1,5 @@
 /*
- * ncr_ndarray - n-dimensional array implementation
+ * ndarray - n-dimensional array implementation
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -27,12 +27,12 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
-#include <ncr/ncr_bits.hpp>
-#include <ncr/ncr_types.hpp>
-#include <ncr/ncr_unicode.hpp>
 
+#include <ncr/common/types.hpp>
+#include <ncr/common/bits.hpp>
+#include <ncr/common/unicode.hpp>
 
-namespace ncr {
+namespace ncr { namespace numpy {
 
 
 /*
@@ -1045,7 +1045,7 @@ is_structured_array<ndarray>(const ndarray &arr)
  * converted to T. This is the case for all basic types.
  */
 template <typename T>
-struct ndarray_t : ncr::ndarray
+struct ndarray_t : ndarray
 {
 	template <typename... Indexes>
 	inline T&
@@ -1072,7 +1072,7 @@ struct ndarray_t : ncr::ndarray
  */
 template <typename T, typename Func = std::function<T (T)>>
 void
-print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Func transform)
+print_tensor(std::ostream &os, ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Func transform)
 {
 	auto shape = arr.shape();
 	auto len   = shape.size();
@@ -1117,7 +1117,7 @@ print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector
  */
 template <typename T, typename Func = std::function<T (T)>>
 void
-print_tensor(ncr::ndarray &arr, std::string indent="", Func transform = [](T v){ return v; }, std::ostream &os = std::cout)
+print_tensor(ndarray &arr, std::string indent="", Func transform = [](T v){ return v; }, std::ostream &os = std::cout)
 {
 	auto shape = arr.shape();
 	auto dims  = shape.size();
@@ -1134,7 +1134,7 @@ print_tensor(ncr::ndarray &arr, std::string indent="", Func transform = [](T v){
  */
 template <typename T>
 void
-print_tensor(std::ostream &os, ncr::ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
+print_tensor(std::ostream &os, ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
 {
 	auto shape = arr.shape();
 	auto len   = shape.size();
@@ -1178,7 +1178,7 @@ print_tensor(std::ostream &os, ncr::ndarray_t<T> &arr, std::string indent, u64_v
  * print_tensor - print an ndarray to an ostream
  */
 template <typename T>
-void print_tensor(ncr::ndarray_t<T> &arr, std::string indent="")
+void print_tensor(ndarray_t<T> &arr, std::string indent="")
 {
 	auto shape = arr.shape();
 	auto dims  = shape.size();
@@ -1187,4 +1187,4 @@ void print_tensor(ncr::ndarray_t<T> &arr, std::string indent="")
 }
 
 
-} // ncr
+}} // ncr

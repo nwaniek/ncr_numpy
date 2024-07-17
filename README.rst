@@ -47,7 +47,7 @@ Thus, either add the path to `ncr_numpy` to your list of includes or copy the
 header files to your preferred location. Also make sure to compile a zip backend
 implementation if you want to use npz files. Currently, `ncr_numpy` ships with
 an implementation that is based on `libzip <libzip>`_ in file
-`ncr/ncr_zip_impl_libzip.hpp <ncr/ncr_zip_impl_libzip.hpp>`_. A simple
+`ncr/common/impl/zip_libzip.hpp <include/ncr/common/impl/zip_libzip.hpp>`_. A simple
 `Makefile <examples/Makefile>`_ as well as a basic `CMakeLists.txt <examples/CMakeLists.txt>`_
 can be found in the `examples <examples>`_ folder.
 
@@ -56,8 +56,8 @@ Using `ncr_numpy` to load data from a file is as simple as:
 .. code-block:: c++
 
     auto val = ncr::numpy::load(your_filepath);
-    if (std::holds_alternative<ncr::ndarray>(val)) {
-        auto arr = std::get<ncr::ndarray>(val);
+    if (std::holds_alternative<ncr::numpy::ndarray>(val)) {
+        auto arr = std::get<ncr::numpy::ndarray>(val);
         // do something with the array
     }
 
@@ -69,7 +69,7 @@ known beforehand:
     ncr::numpy::npzfile npz;
     ncr::numpy::from_npz("some/file.npz", npz);
     std::cout << "shape = ";
-    ncr::serialize_shape(std::cout, npz["array_name"].shape);
+    ncr::numpy::serialize_shape(std::cout, npz["array_name"].shape);
     std::cout << "\n";
 
 Data that is read from a simple numpy file is written to an `ndarray`.
@@ -79,7 +79,7 @@ for `ndarray` to make working with known basic data types easier.
 
 .. code-block:: c++
 
-    ncr::ndarray_t<f64> arr;
+    ncr::numpy::ndarray_t<f64> arr;
     ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr);
     arr(0, 0, 0) = 7.0;
     arr(1, 1, 1) = 17.0;
@@ -101,12 +101,12 @@ names of the arrays and the arrays themselves.
     for (auto const& name: npz.names) {
         auto shape = npz[name].shape();
         std::cout << name << ".shape = ";
-        ncr::serialize_shape(std::cout, shape);
+        ncr::numpy::serialize_shape(std::cout, shape);
         std::cout << "\n";
     }
 
-This example uses `ncr::serialize_shape`, which is a utility function to turn
-the shape of an ndarray into something readable.
+This example uses `ncr::numpy::serialize_shape`, which is a utility function to
+turn the shape of an ndarray into something readable.
 
 Working with (known) structured arrays is straightforward. The following example
 assumes that student data, with a name and two grades per student, are stored in
@@ -120,7 +120,7 @@ a npy file.
         f64 grades[2];
     };
 
-    ncr::ndarray arr;
+    ncr::numpy::ndarray arr;
     ncr::numpy::npyfile npy;
     ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
 

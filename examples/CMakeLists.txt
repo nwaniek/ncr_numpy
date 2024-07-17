@@ -31,7 +31,7 @@ target_compile_definitions(
 # the target needs to find the 'ncr' directory. Usually you will have copied
 # that to some other location, e.g. it might reside under /opt/ncr_numpy/ncr, so
 # you would have to point the build system to /opt/ncr_numpy instead of '..'
-target_include_directories(example PUBLIC ..)
+target_include_directories(example PUBLIC ../include)
 
 # for the example above which uses ncr_numpy's default zip backend, we need to
 # link against libzip

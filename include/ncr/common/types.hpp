@@ -1,9 +1,11 @@
 /*
- * ncr_types.hpp - basic types used in ncr
+ * types.hpp - basic types used in ncr
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
+ *
+ * TODO: encapsulate in namespace ncr
  */
 
 #pragma once
