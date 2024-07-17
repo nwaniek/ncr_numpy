@@ -118,6 +118,133 @@ operator<<(std::ostream &os, const storage_order order)
 }
 
 
+
+template <typename T = size_t>
+std::vector<T>
+unravel_index(int index, const std::vector<T>& shape, storage_order order)
+{
+	int n = shape.size();
+	std::vector<int> indices(n);
+
+	switch (order) {
+	case storage_order::row_major:
+		for (int i = n - 1; i >= 0; --i) {
+			indices[i] = index % shape[i];
+			index /= shape[i];
+		}
+		break;
+
+	case storage_order::col_major:
+		for (int i = 0; i < n; ++i) {
+			indices[i] = index % shape[i];
+			index /= shape[i];
+		}
+		break;
+	}
+
+	return indices;
+}
+
+
+template <typename T = size_t>
+std::vector<T>
+unravel_index_strided(size_t offset, const std::vector<T> &strides, storage_order order)
+{
+	std::vector<T> indices(strides.size());
+
+	switch (order) {
+	case storage_order::row_major:
+		for (size_t i = 0; i < strides.size(); ++i) {
+			size_t currentStride = strides[i];
+			size_t currentIndex = offset / currentStride;
+			offset %= currentStride;
+			indices[i] = currentIndex;
+		}
+		break;
+
+	case storage_order::col_major:
+		for (size_t i = strides.size(); i-- > 0;) {
+			size_t currentStride = strides[i];
+			size_t currentIndex = offset / currentStride;
+			offset %= currentStride;
+			indices[i] = currentIndex;
+		}
+		break;
+	}
+
+	return indices;
+}
+
+// array with dimensions N_1 x N_2 x ... x N_d and index tuple (n_1,
+// n_2, ..., n_d), n_k ∈ [0, N_k - 1]:
+//
+// formula for row-major: sum_{k=1}^d (prod_{l=k+1}^d N_l) * n_k
+// formula for col-major: sum_{k=1}^d (prod_{l=1}^{k-1} N_l) * n_k
+
+
+template <typename T = size_t>
+T
+stride_row_major(const std::vector<T> &shape, ssize_t l)
+{
+	size_t s = 1;
+	for (; ++l < (ssize_t)shape.size(); )
+		s *= shape[l];
+	return s;
+}
+
+
+template <typename T = size_t>
+T
+stride_col_major(const std::vector<T> &shape, ssize_t k)
+{
+	size_t s = 1;
+	for (; --k >= 0; )
+		s *= shape[k];
+	return s;
+}
+
+
+template <typename T = size_t, bool single_loop = true>
+void
+compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_order order)
+{
+	strides.resize(shape.size());
+
+	if constexpr (single_loop) {
+		T total = 1;
+		switch (order) {
+		case storage_order::row_major:
+			for (size_t i = shape.size(); i-- > 0; ) {
+				strides[i] = total;
+				total *= shape[i];
+			}
+			break;
+
+		case storage_order::col_major:
+			for (size_t i = 0; i < shape.size(); ++i) {
+				strides[i] = total;
+				total *= shape[i];
+			}
+			break;
+		}
+	}
+	else {
+		T (*fptr)(const std::vector<T> &shape, ssize_t);
+		switch (order) {
+		case storage_order::row_major:
+			fptr = &stride_row_major<T>;
+			break;
+		case storage_order::col_major:
+			fptr = &stride_col_major<T>;
+			break;
+		}
+		for (size_t k = 0; k < shape.size(); k++)
+			strides[k] = (*fptr)(shape, k);
+	}
+}
+
+
+
 /*
  * dtype - data type description of elements in the ndarray
  *
@@ -521,6 +648,17 @@ struct ndarray
 
 
 	/*
+	 * unravel - unravel a given index for this particular array
+	 */
+	template <typename T>
+	std::vector<T>
+	unravel(int index)
+	{
+		return unravel_index(index, _shape, _order);
+	}
+
+
+	/*
 	 * get - get the u8 subrange in the data buffer for an element
 	 */
 	template <typename ...Indexes>
@@ -539,6 +677,10 @@ struct ndarray
 					throw std::out_of_range("Index out of bounds\n");
 			}
 
+			// this ravels the index, i.e. turns it into a flat index. note that
+			// in contrast to numpy.ndarray.strides, _strides contains only
+			// number of elements, not bytes. the bytes will be multiplied in
+			// below when extracting u8_subrange
 			size_t i = 0;
 			size_t offset = 0;
 			((offset += index * _strides[i], i++), ...);
@@ -803,53 +945,42 @@ struct ndarray
 	storage_order       order() const { return _order; }
 	const u64_vector&   shape() const { return _shape; }
 	const u8_vector&    data()  const { return _data;  }
+	size_t              size()  const { return _size;  }
 
 private:
-	struct dtype  _dtype;
+	// _data stores the type information of the array
+	dtype         _dtype;
+
+	// _shape contains the shape of the array, meaning the size of each
+	// dimension. Example: a shape of [2,3] would mean an array of size 2x3,
+	// i.e. with 2 rows and 3 columns.
 	u64_vector    _shape;
+
+	// _size contains the number of elements in the array
 	size_t        _size  = 0;
+
+	// storage order used in this array. by default this corresponds to
+	// row_major (or 'C' order). Alternatively, this could be col_major (or
+	// 'Fortran' order).
 	storage_order _order = storage_order::row_major;
+
+	// _strides is the tuple (or vector) of elements in each dimension when
+	// traversing the array. Note that this differs from numpy's ndarray.strides
+	// in that _strides contains number of elements and *not* number of bytes.
+	// the bytes depend on _dtype.item_size, and will be usually multiplied in
+	// only after the number of elements to skip are determined. See get<> for
+	// an example
 	u64_vector    _strides;
+
+	// _data contains the 'raw' data of the array
 	u8_vector     _data;
 
-	// array with dimensions N_1 x N_2 x ... x N_d and index tuple (n_1,
-	// n_2, ..., n_d), n_k ∈ [0, N_k - 1]:
-	//
-	// formula for row-major: sum_{k=1}^d (prod_{l=k+1}^d N_l) * n_k
-	// formula for col-major: sum_{k=1}^d (prod_{l=1}^{k-1} N_l) * n_k
-
-	size_t
-	_stride_row_major(ssize_t l) const
-	{
-		size_t s = 1;
-		for (; ++l < (ssize_t)_shape.size(); )
-			s *= _shape[l];
-		return s;
-	}
-
-
-	size_t
-	_stride_col_major(ssize_t k) const
-	{
-		size_t s = 1;
-		for (; --k >= 0; )
-			s *= _shape[k];
-		return s;
-	}
 
 
 	void
 	_compute_strides()
 	{
-		size_t (ndarray::*fptr)(ssize_t) const;
-		if (_order == storage_order::row_major)
-			fptr = &ndarray::_stride_row_major;
-		else
-			fptr = &ndarray::_stride_col_major;
-
-		_strides.resize(_shape.size());
-		for (size_t k = 0; k < _shape.size(); k++)
-			_strides[k] = (this->*fptr)(k);
+		compute_strides(_shape, _strides, _order);
 	}
 
 
