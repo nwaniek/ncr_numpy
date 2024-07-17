@@ -346,8 +346,8 @@ struct ndarray_item
 
 
 	template <typename T>
-	inline T&
-	as() {
+	T&
+	as() const {
 		// avoid reintrepreting to types which are too large and thus exceed
 		// memory bounds
 		if (_r.size() < sizeof(T)) {
@@ -360,7 +360,8 @@ struct ndarray_item
 
 
 	template <typename T>
-	void operator=(T value)
+	void
+	operator=(T value)
 	{
 		if (_r.size() < sizeof(T)) {
 			std::ostringstream s;
@@ -371,20 +372,24 @@ struct ndarray_item
 	}
 
 
-	inline const u8*
+	inline
+	const u8*
 	data() const {
 		return _r.data();
 	}
 
 
-	inline const dtype&
+	inline
+	const dtype&
 	type() const {
 		return _dtype;
 	}
 
 
 	template <typename T, typename... Args>
-	static const T field(const ndarray_item &item, Args&&... args);
+	static
+	const T
+	field(const ndarray_item &item, Args&&... args);
 
 
 	template<typename T, typename... Args>
@@ -392,6 +397,7 @@ struct ndarray_item
 	get_field(Args&&... args) const {
 		return field<T>(*this, std::forward<Args>(args)...);
 	}
+
 
 private:
 	// the data subrange within the ndarray

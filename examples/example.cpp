@@ -586,7 +586,7 @@ example_nested()
 	std::cout << "\n";
 	std::cout << "dtype information\n";
 	std::cout << arr.type() << "\n";
-	std::cout << "type description string:       " << arr.get_type_description() << "\n";
+	std::cout << "type description string: " << arr.get_type_description() << "\n";
 	inspect_dtype(arr.type());
 
 	std::cout << "\n";
@@ -595,9 +595,17 @@ example_nested()
 	std::cout << "country_gdp_record_packed_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
 	std::cout << "year_gdp_record_packed_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
 
+
+
+	// one
 	std::ios old_state(nullptr);
 	old_state.copyfmt(std::cout);
-	std::cout << "Top 3 countries w.r.t GDP:\n";
+
+	// one way to get the content of a structured array is using ndarray::apply.
+	// This is particularly useful if the values inside the array should change,
+	// because apply expects the callback to return a new value that will be
+	// written in-place.
+	std::cout << "Top 3 countries w.r.t GDP (via ndarray::apply):\n";
 	arr.apply<year_gdp_record_packed_t>(
 		[](year_gdp_record_packed_t &record) {
 			std::cout << "  " << record.year << "\n";
@@ -607,8 +615,26 @@ example_nested()
 			// don't forget to return (see definition of apply for details)
 			return record;
 		});
-	std::cout.copyfmt(old_state);
 
+	// however, apply above might not be ideal, because it takes the return
+	// value and copies it back into the array. This is often not what
+	// is wanted or required, and comes at the cost of copy operations.
+	// Instead of apply, it's also possible to use map. map gives the callback
+	// a reference to an ndarray_item instance, which can be cast to the
+	// required type via ndarray_item::as.
+	std::cout << "\n";
+	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
+	arr.map([](const ncr::ndarray_item &item) {
+			auto &record = item.as<year_gdp_record_packed_t>();
+			std::cout << "  " << record.year << "\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+			std::cout << "    " << strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+		});
+	// note that, in principle, it's also possible to use ndarray_t for packed
+	// PODs.
+
+	std::cout.copyfmt(old_state);
 
 	// padded structs, print some further information and a hexdump
 	std::cout << "\n";
@@ -620,6 +646,7 @@ example_nested()
 
 	// map the data into our custom structs using the array's map function and a
 	// suitable lambda/callback
+	old_state.copyfmt(std::cout);
 	arr.map([](const ncr::ndarray_item &item) {
 		// manually map each field into a struct member. Note that this could be
 		// hardcoded instead of iterating, but this serves the purpose for other
@@ -647,6 +674,8 @@ example_nested()
 
 		std::cout << record;
 	});
+	std::cout.copyfmt(old_state);
+
 
 }
 
