@@ -648,13 +648,12 @@ example_nested()
 	// suitable lambda/callback
 	old_state.copyfmt(std::cout);
 	arr.map([](const ncr::ndarray_item &item) {
-		// manually map each field into a struct member. Note that this could be
-		// hardcoded instead of iterating, but this serves the purpose for other
-		// or more complicated nested structs.
-
-		// the example shows how to use either the static ::field method of
+		// Manually map each field into a struct member.
+		//
+		// The example shows how to use either the static ::field method of
 		// ndarray_item, or the non-static membre function get_field (which in
 		// turn calls the static method).
+		//
 		// For particular non-standard types that need special treatment of the
 		// data underlying the item, please implement a custom field_extractor.
 		// An example for this is provided for ucs4strings, see struct
