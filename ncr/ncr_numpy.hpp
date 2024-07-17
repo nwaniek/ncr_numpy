@@ -758,10 +758,12 @@ parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &sha
 
 
 inline result
-compute_item_size(dtype &dtype)
+compute_item_size(dtype &dtype, u64 offset = 0)
 {
+	dtype.offset = offset;
+
 	// for simple arrays, we simple report the item size
-	if (!dtype.is_structured_array()) {
+	if (!is_structured_array(dtype)) {
 		// most types have their 'width' in bytes given directly in the
 		// descr string, which is already stored in dtype.size. However, unicode
 		// strings and objects differ in that the size that is given in the
@@ -787,7 +789,7 @@ compute_item_size(dtype &dtype)
 		u64 subsize = 0;
 		for (auto &field: dtype.fields) {
 			result res;
-			if ((res = compute_item_size(field)) != result::ok)
+			if ((res = compute_item_size(field, dtype.offset + subsize)) != result::ok)
 				return res;
 			subsize += field.item_size;
 		}

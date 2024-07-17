@@ -524,6 +524,41 @@ struct year_gdp_record_t
 
 
 /*
+ * operator<< - pretty print a year_gdp_record_t
+ */
+inline std::ostream&
+operator<< (std::ostream &os, const year_gdp_record_t &record)
+{
+	os << "  " << record.year << "\n";
+	os << "    " << strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+	os << "    " << strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+	os << "    " << strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+	return os;
+}
+
+
+
+/*
+ * inspect_dtype - print some information about the bytes of a dtype
+ *
+ * TODO: move to a better place
+ */
+void
+inspect_dtype(const ncr::dtype &dtype, std::string indent = "")
+{
+	for (const auto &field_dtype: dtype.fields) {
+		std::cout << indent << field_dtype.name
+			      << ": offset = " << field_dtype.offset
+			      << ", item_size = " << field_dtype.item_size
+			      << ", end = " << (field_dtype.offset + field_dtype.item_size)
+			      << "\n";
+		if (is_structured_array(field_dtype))
+			inspect_dtype(field_dtype, indent + "  ");
+	}
+}
+
+
+/*
  * example_nested - read a nested structured array
  */
 void
@@ -541,7 +576,20 @@ example_nested()
 	// POD data types, but sometimes also padding needs to be removed. See the
 	// #pragma pack around struct year_gdp_record_t for an example how to avoid
 	// padding.
+
+	// the hexdump can be useful to compare the type description create by
+	// ncr::ndarray and the one stored in the file
+	u8_vector buf_in;
+	buffer_from_file("assets/in/nested.npy", buf_in);
+	hexdump(std::cout, buf_in);
+
+	std::cout << "\n";
+	std::cout << "dtype information\n";
 	std::cout << arr.type() << "\n";
+	std::cout << "type description string:       " << arr.get_type_description() << "\n";
+	inspect_dtype(arr.type());
+
+	std::cout << "\n";
 	std::cout << "sizeof(year_gdp_record_t):            " << sizeof(year_gdp_record_packed_t) << "\n";
 	std::cout << "arr.item_size:                        " << arr.type().item_size << "\n";
 	std::cout << "country_gdp_record_packed_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
@@ -567,15 +615,39 @@ example_nested()
 	std::cout << "Example of nested structured array when working with potentially padded structs\n";
 	std::cout << "sizeof(year_gdp_record_t):     " << sizeof(year_gdp_record_t) << "\n";
 	std::cout << "arr.item_size:                 " << arr.type().item_size << "\n";
-	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
+	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<country_gdp_record_t> && std::is_trivial_v<country_gdp_record_t>) << "\n";
 	std::cout << "year_gdp_record_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
-	std::cout << "type description string:       " << arr.get_type_description() << "\n";
 
-	// the hexdump can be useful to compare the type description create by
-	// ncr::ndarray and the one stored in the file
-	u8_vector buf_in;
-	buffer_from_file("assets/in/nested.npy", buf_in);
-	hexdump(std::cout, buf_in);
+	// map the data into our custom structs using the array's map function and a
+	// suitable lambda/callback
+	arr.map([](const ncr::ndarray_item &item) {
+		// manually map each field into a struct member. Note that this could be
+		// hardcoded instead of iterating, but this serves the purpose for other
+		// or more complicated nested structs.
+
+		// the example shows how to use either the static ::field method of
+		// ndarray_item, or the non-static membre function get_field (which in
+		// turn calls the static method).
+		// For particular non-standard types that need special treatment of the
+		// data underlying the item, please implement a custom field_extractor.
+		// An example for this is provided for ucs4strings, see struct
+		// field_extractor in ncr_ndarray.hpp
+
+		year_gdp_record_t record;
+		record.year = ncr::ndarray_item::field<u32>(item, "year");
+
+		record.c1.country_name = ncr::ndarray_item::field<ncr::ucs4string<16>>(item, "countries", "c1", "country");
+		record.c1.gdp  = ncr::ndarray_item::field<u64>(item, "countries", "c1", "gdp");
+
+		record.c2.country_name = ncr::ndarray_item::field<ncr::ucs4string<16>>(item, "countries", "c2", "country");
+		record.c2.gdp  = item.get_field<u64>("countries", "c2", "gdp");
+
+		record.c3.country_name = item.get_field<ncr::ucs4string<16>>("countries", "c3", "country");
+		record.c3.gdp  = item.get_field<u64>("countries", "c3", "gdp");
+
+		std::cout << record;
+	});
+
 }
 
 

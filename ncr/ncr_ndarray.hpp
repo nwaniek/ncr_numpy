@@ -29,8 +29,21 @@
 #include <iostream>
 #include <ncr/ncr_bits.hpp>
 #include <ncr/ncr_types.hpp>
+#include <ncr/ncr_unicode.hpp>
+
 
 namespace ncr {
+
+
+/*
+ * forward declarations
+ */
+struct dtype;
+struct ndarray_item;
+struct ndarray;
+
+// explicit test to check if this is a structured array
+template <typename T> bool is_structured_array(const T&);
 
 
 /*
@@ -124,45 +137,80 @@ struct dtype
 	// name of the field in case of strutured arrays. for basic types this is
 	// empty.
 	std::string
-		name       {""};
+		name       = "";
 
 	// byte order of the data
 	byte_order
-		endianness {byte_order::native};
+		endianness = byte_order::native;
 
 	// single character type code (see table at start of this file)
 	u8
-		type_code  {0};
+		type_code  = 0;
 
 	// size of the data in bytes, e.g. bytes of an integer or characters in a
 	// unicode string
 	u32
-		size       {0};
+		size       = 0;
 
 	// size of an item in bytes in this dtype (e.g. U16 is a 16-character
 	// unicode string, each character using 4 bytes.  hence, item_size = 64
 	// bytes).
 	u64
-		item_size  {0};
+		item_size  = 0;
+
+	// offset of the field if this is a field in a structured array, otherwise
+	// this will be (most likely) 0
+	u64
+		offset     = 0;
 
 	// numpy's shape has python 'int', which is commonly a 64bit integer. see
 	// python's sys.maxsize to get the maximum value, log(sys.maxsize,2)+1 will
 	// tell the number of bits used on a machine. Here, we simply assume that
 	// a u64 is enough.
 	std::vector<u64>
-		shape      {};
+		shape      = {};
 
 	// structured arrays will contain fields, which are themselves dtypes
 	std::vector<dtype>
-		fields     {};
-
-	// quick and explicit test to check if this is a structured array
-	bool
-	is_structured_array() const
-	{
-		return fields.size() > 0;
-	}
+		fields     = {};
 };
+
+
+
+template <>
+inline bool
+is_structured_array<dtype>(const dtype &dtype)
+{
+	return !dtype.fields.empty();
+}
+
+
+inline
+const dtype*
+find_field(const dtype &current_dtype, const std::string& field_name)
+{
+	for (const auto &field: current_dtype.fields) {
+		if (field.name == field_name) {
+			return &field;
+		}
+	}
+	return nullptr;
+}
+
+
+template <typename First, typename... Rest>
+const dtype*
+get_nested_dtype(const dtype &current_dtype, const First& first, const Rest&... rest)
+{
+	const dtype* next_dtype = find_field(current_dtype, first);
+	if (!next_dtype)
+		return nullptr;
+
+	if constexpr (sizeof...(rest) == 0)
+		return next_dtype;
+	else
+		return get_nested_dtype(*next_dtype, rest...);
+}
 
 
 //
@@ -226,7 +274,7 @@ inline void
 serialize_dtype(std::ostream &s, const dtype &dtype)
 {
 	s << "('" << dtype.name << "', ";
-	if (dtype.is_structured_array())
+	if (is_structured_array(dtype))
 		serialize_dtype_fields(s, dtype);
 	else {
 		serialize_dtype_typestr(s, dtype);
@@ -243,7 +291,7 @@ inline void
 serialize_dtype_descr(std::ostream &s, const dtype &dtype)
 {
 	s << "'descr': ";
-	if (dtype.is_structured_array())
+	if (is_structured_array(dtype))
 		serialize_dtype_fields(s, dtype);
 	else
 		serialize_dtype_typestr(s, dtype);
@@ -262,7 +310,7 @@ inline std::ostream&
 operator<< (std::ostream &os, const dtype &dtype)
 {
 	std::ostringstream s;
-	if (dtype.is_structured_array())
+	if (is_structured_array(dtype))
 		serialize_dtype_fields(s, dtype);
 	else
 		serialize_dtype_typestr(s, dtype);
@@ -293,8 +341,9 @@ operator<< (std::ostream &os, const dtype &dtype)
 struct ndarray_item
 {
 	ndarray_item() = delete;
-	ndarray_item(u8_subrange &&r) : _r(r) {}
-	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end) : _r(u8_subrange(begin, end)) {}
+	ndarray_item(u8_subrange &&_ra, dtype &_dt) : _r(_ra), _dtype(_dt) {}
+	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dtype) : _r(u8_subrange(begin, end)), _dtype(dtype) {}
+
 
 	template <typename T>
 	inline T&
@@ -309,6 +358,7 @@ struct ndarray_item
 		return *reinterpret_cast<T*>(_r.data());
 	}
 
+
 	template <typename T>
 	void operator=(T value)
 	{
@@ -320,10 +370,72 @@ struct ndarray_item
 		*reinterpret_cast<T*>(_r.data()) = value;
 	}
 
-	// the stored subrange. while this is mostly a private field, can have
-	// access to it open
-	u8_subrange _r;
+
+	inline const u8*
+	data() const {
+		return _r.data();
+	}
+
+
+	inline const dtype&
+	type() const {
+		return _dtype;
+	}
+
+
+	template <typename T, typename... Args>
+	static const T field(const ndarray_item &item, Args&&... args);
+
+
+	template<typename T, typename... Args>
+	const T
+	get_field(Args&&... args) const {
+		return field<T>(*this, std::forward<Args>(args)...);
+	}
+
+private:
+	// the data subrange within the ndarray
+	const u8_subrange _r;
+
+	// the data type of the item (equal to the data type of its ndarray)
+	const dtype &_dtype;
 };
+
+
+template <typename T, typename = void>
+struct field_extractor
+{
+	static const T
+	get_field(const ndarray_item &item, const dtype& dtype)
+	{
+		// TODO: bounds checking
+		return *reinterpret_cast<const T*>(item.data() + dtype.offset);
+	}
+};
+
+
+template <typename T>
+struct field_extractor<T, std::enable_if_t<is_ucs4string<T>::value>>
+{
+	static const T
+	get_field(const ndarray_item &item, const dtype& dtype)
+	{
+		// TODO: bounds checking
+		constexpr auto N = ucs4string_size<T>::value;
+		return to_ucs4<N>(*reinterpret_cast<const std::array<u32, N>*>(item.data() + dtype.offset));
+	}
+};
+
+
+template <typename T, typename... Args>
+const T
+ndarray_item::field(const ndarray_item &item, Args&&... args)
+{
+	const dtype *dtype = get_nested_dtype(item.type(), args...);
+	if (!dtype)
+		throw std::runtime_error("Field not found: " + (... + ('/' + std::string(args))));
+	return field_extractor<T>::get_field(item, *dtype);
+}
 
 
 /*
@@ -455,7 +567,7 @@ struct ndarray
 			                   _data.begin() + _dtype.item_size * (offset + 1));
 		}
 		else
-			// TODO: like above, evalute if this is the correct response
+			// TODO: like above, evaluate if this is the correct response
 			return u8_subrange();
 	}
 
@@ -470,7 +582,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(Indexes... index)
 	{
-		return ndarray_item(this->get(index...));
+		return ndarray_item(this->get(index...), _dtype);
 	}
 
 
@@ -483,7 +595,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(u64_vector indexes)
 	{
-		return ndarray_item(this->get(indexes));
+		return ndarray_item(this->get(indexes), _dtype);
 	}
 
 
@@ -540,12 +652,12 @@ struct ndarray
 	 * This is useful, for instance, when the data stored in the array is not in
 	 * the same storage_order as the system that is using the data.
 	 */
-	template <typename T, typename Fn = std::function<T (T)>, typename... Indexes>
+	template <typename T, typename Func = std::function<T (T)>, typename... Indexes>
 	inline T
-	transform(Fn fn, Indexes... index)
+	transform(Func func, Indexes... index)
 	{
 		T val = value<T>(index...);
-		return fn(val);
+		return func(val);
 	}
 
 
@@ -561,15 +673,15 @@ struct ndarray
 	 * TODO: provide an apply function which also passes the element index back
 	 * to the transformation function
 	 */
-	template <typename Fn = std::function<u8_vector (u8_const_subrange)>>
+	template <typename Func = std::function<u8_vector (u8_const_subrange)>>
 	inline void
-	apply(Fn fn)
+	apply(Func func)
 	{
 		size_t offset = 0;
 		auto stride = _dtype.item_size;
 		while (offset < _data.size()) {
 			auto range = u8_const_subrange(_data.begin() + offset, _data.begin() + offset + stride);
-			auto new_value = fn(range);
+			auto new_value = func(range);
 			if (new_value.size() != range.size())
 				throw std::length_error("Invalid size of result");
 			std::copy(new_value.begin(), new_value.end(), _data.begin() + offset);
@@ -588,23 +700,34 @@ struct ndarray
 	 * call transform<i32>(...) on an array that stores values of types with
 	 * different size, e.g. i16 or i64.
 	 */
-	template <typename T, typename Fn = std::function<T (T)>>
+	template <typename T, typename Func = std::function<T (T)>>
 	inline void
-	apply(Fn fn)
+	apply(Func func)
 	{
 		size_t offset = 0;
 		auto stride = sizeof(T);
 		while (offset < _data.size()) {
 			T &val = *reinterpret_cast<T*>(_data.data() + offset);
-			val = fn(val);
+			val = func(val);
 			offset += stride;
 		}
 	}
 
 
-	// TODO: provide a method in ndarray that allows to iterate over all elements
-	//       and move the function into this 'iter' or 'walk' method. then
-	//       provide other methods
+	// TODO: give each ndarray_item its index
+	template <typename Func = std::function<void (size_t, const ndarray_item&, const dtype)>>
+	inline void
+	map(Func func)
+	{
+		for (size_t i = 0; i < _size; i++) {
+			func(ndarray_item(
+					u8_subrange(_data.begin() + _dtype.item_size * i,
+								_data.begin() + _dtype.item_size * (i + 1)),
+					_dtype));
+		}
+	}
+
+
 	template <typename T>
 	T
 	max()
@@ -767,6 +890,15 @@ private:
 };
 
 
+template <>
+inline bool
+is_structured_array<ndarray>(const ndarray &arr)
+{
+	return !arr.type().fields.empty();
+}
+
+
+
 /*
  * ndarray_t - simple typed facade for ndarray
  *
@@ -801,9 +933,9 @@ struct ndarray_t : ncr::ndarray
  * Explicit interface, commonly a user does not need to use this function
  * directly
  */
-template <typename T, typename Fn = std::function<T (T)>>
+template <typename T, typename Func = std::function<T (T)>>
 void
-print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Fn transform)
+print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Func transform)
 {
 	auto shape = arr.shape();
 	auto len   = shape.size();
@@ -846,9 +978,9 @@ print_tensor(std::ostream &os, ncr::ndarray &arr, std::string indent, u64_vector
 /*
  * print_tensor - print an ndarray to an ostream
  */
-template <typename T, typename Fn = std::function<T (T)>>
+template <typename T, typename Func = std::function<T (T)>>
 void
-print_tensor(ncr::ndarray &arr, std::string indent="", Fn transform = [](T v){ return v; }, std::ostream &os = std::cout)
+print_tensor(ncr::ndarray &arr, std::string indent="", Func transform = [](T v){ return v; }, std::ostream &os = std::cout)
 {
 	auto shape = arr.shape();
 	auto dims  = shape.size();

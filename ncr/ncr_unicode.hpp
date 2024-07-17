@@ -51,13 +51,28 @@ struct ucs4string<0>
 };
 
 
+template <typename T>
+struct is_ucs4string : std::false_type {};
+
+template <size_t N>
+struct is_ucs4string<ucs4string<N>> : std::true_type {};
+
+template <typename T>
+struct ucs4string_size : std::integral_constant<u64, 0> {};
+
+template <size_t N>
+struct ucs4string_size<ucs4string<N>>: std::integral_constant<u64, N> {};
+
+
 template <size_t N = 0>
 ucs4string<N>
 to_ucs4(const std::array<u32, N> &ucs4)
 {
 	ucs4string<N> result;
-	if constexpr (N != 0)
-		result.data = Container(ucs4.begin(), ucs4.end());
+	if constexpr (N != 0) {
+		std::fill(result.data.begin(), result.data.end(), 0);
+		std::copy(ucs4.begin(), ucs4.end(), result.data.begin());
+	}
 	return result;
 }
 
@@ -75,7 +90,7 @@ to_ucs4(const std::vector<u32> &ucs4)
 			throw std::runtime_error("Input string exceeds fixed-width UCS-4 string size.");
 		// make sure the entire array is zero initialized
 		std::fill(result.data.begin(), result.data.end(), 0);
-		std::copy(ucs4.begin(), ucs4.end(), result.data);
+		std::copy(ucs4.begin(), ucs4.end(), result.data.begin());
 	}
 	return result;
 }
@@ -203,10 +218,8 @@ operator<<(std::ostream& os, const ucs4string<N> &ucs4)
 template <size_t N>
 struct utf8string
 {
-	using Container = std::conditional_t<N == 0, std::vector<u8>, std::array<u8, N>>;
-
 	std::array<u8, N>
-		data {};
+		data;
 };
 
 
@@ -214,8 +227,21 @@ template <>
 struct utf8string<0>
 {
 	std::vector<u8>
-		data {};
+		data;
 };
+
+
+template <typename T>
+struct is_utf8string : std::false_type {};
+
+template <size_t N>
+struct is_utf8string<utf8string<N>> : std::true_type {};
+
+template <typename T>
+struct utf8string_size : std::integral_constant<u64, 0> {};
+
+template <size_t N>
+struct utf8string_size<utf8string<N>>: std::integral_constant<u64, N> {};
 
 
 template <size_t N = 0>
@@ -223,8 +249,10 @@ utf8string<N>
 to_utf8(const std::array<u8, N> &utf8)
 {
 	utf8string<N> result;
-	if constexpr (N != 0)
-		result.data = Container(utf8.begin(), utf8.end());
+	if constexpr (N != 0) {
+		std::fill(result.data.begin(), result.data.end(), 0);
+		std::copy(utf8.begin(), utf8.end(), result.data.begin());
+	}
 	return result;
 }
 
@@ -241,7 +269,7 @@ to_utf8(const std::vector<u8> &utf8)
 			throw std::runtime_error("Input string exceeds fixed-width UTF-8 string size.");
 		// make sure the entire array is zero initialized
 		std::fill(result.data.begin(), result.data.end(), 0);
-		std::copy(utf8.begin(), utf8.end(), result.data);
+		std::copy(utf8.begin(), utf8.end(), result.data.begin());
 	}
 	return result;
 }
