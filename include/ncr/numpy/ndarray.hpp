@@ -579,7 +579,9 @@ private:
 	u8_vector     _data;
 
 
-
+	/*
+	 * _compute_strides - compute the strides for this particular ndarray
+	 */
 	void
 	_compute_strides()
 	{
@@ -587,6 +589,9 @@ private:
 	}
 
 
+	/*
+	 * _compute_size - compute the number of elements in the array
+	 */
 	void
 	_compute_size()
 	{
