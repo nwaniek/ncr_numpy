@@ -38,7 +38,7 @@ example_ndarray()
 	std::cout << "\nshape: ";
 	ncr::numpy::serialize_shape(std::cout, array.shape());
 	std::cout << "\ndtype: ";
-	ncr::numpy::serialize_dtype(std::cout, array.type());
+	ncr::numpy::serialize_dtype(std::cout, array.dtype());
 	std::cout << "\n";
 	std::cout << array.get_type_description() << "\n";
 
@@ -350,9 +350,9 @@ example_structured()
 	ncr::numpy::npyfile npy;
 	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
 
-	std::cout << arr.type() << "\n";
+	std::cout << arr.dtype() << "\n";
 	std::cout << "sizeof(student_t):  " << sizeof(student_t) << "\n";
-	std::cout << "arr.item_size:      " << arr.type().item_size << "\n";
+	std::cout << "arr.item_size:      " << arr.dtype().item_size << "\n";
 	std::cout << "student_t is a POD: " << (std::is_standard_layout_v<student_t> && std::is_trivial_v<student_t>) << "\n";
 
 
@@ -501,13 +501,13 @@ example_nested()
 
 	std::cout << "\n";
 	std::cout << "dtype information\n";
-	std::cout << arr.type() << "\n";
+	std::cout << arr.dtype() << "\n";
 	std::cout << "type description string: " << arr.get_type_description() << "\n";
-	inspect_dtype(arr.type());
+	inspect_dtype(arr.dtype());
 
 	std::cout << "\n";
 	std::cout << "sizeof(year_gdp_record_t):            " << sizeof(year_gdp_record_packed_t) << "\n";
-	std::cout << "arr.item_size:                        " << arr.type().item_size << "\n";
+	std::cout << "arr.item_size:                        " << arr.dtype().item_size << "\n";
 	std::cout << "country_gdp_record_packed_t is a POD: " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
 	std::cout << "year_gdp_record_packed_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_packed_t> && std::is_trivial_v<year_gdp_record_packed_t>) << "\n";
 
@@ -555,7 +555,7 @@ example_nested()
 	std::cout << "\n";
 	std::cout << "Example of nested structured array when working with potentially padded structs\n";
 	std::cout << "sizeof(year_gdp_record_t):     " << sizeof(year_gdp_record_t) << "\n";
-	std::cout << "arr.item_size:                 " << arr.type().item_size << "\n";
+	std::cout << "arr.item_size:                 " << arr.dtype().item_size << "\n";
 	std::cout << "country_gdp_record_t is a POD: " << (std::is_standard_layout_v<country_gdp_record_t> && std::is_trivial_v<country_gdp_record_t>) << "\n";
 	std::cout << "year_gdp_record_t is a POD:    " << (std::is_standard_layout_v<year_gdp_record_t> && std::is_trivial_v<year_gdp_record_t>) << "\n";
 

@@ -1,5 +1,5 @@
 /*
- * ndarray - n-dimensional array implementation
+ * ndarray.hpp - n-dimensional array implementation
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
@@ -32,418 +32,21 @@
 #include <ncr/common/bits.hpp>
 #include <ncr/common/unicode.hpp>
 
+#include "core.hpp"
+#include "dtype.hpp"
+#include "declarations.hpp"
+
 namespace ncr { namespace numpy {
 
 
 /*
  * forward declarations
  */
-struct dtype;
 struct ndarray_item;
 struct ndarray;
 
 // explicit test to check if this is a structured array
 template <typename T> bool is_structured_array(const T&);
-
-
-/*
- * byte_order - byte order indicator
- */
-enum class byte_order {
-	little,
-	big,
-	not_relevant,
-	invalid,
-	// TODO: determine if native = little is correct
-	native = little,
-};
-
-
-inline char
-to_char(byte_order o) {
-	switch (o) {
-		case byte_order::little:       return '<';
-		case byte_order::big:          return '>';
-		case byte_order::not_relevant: return '|';
-
-		// TODO: set a fail state for invalid
-		case byte_order::invalid:      return '!';
-	}
-	return '!';
-}
-
-
-// operator<< usually used in std::cout
-// TODO: remove or disable?
-inline std::ostream&
-operator<<(std::ostream &os, const byte_order bo)
-{
-	switch (bo) {
-		case byte_order::little:       os << "little";       break;
-		case byte_order::big:          os << "big";          break;
-		case byte_order::not_relevant: os << "not_relevant"; break;
-		case byte_order::invalid:      os << "invalid";      break;
-
-		// this should never happen
-		default: os.setstate(std::ios_base::failbit);
-	}
-	return os;
-}
-
-
-/*
- * storage_order - storage order of data in a dtype
- */
-enum class storage_order {
-	// linear storage in which consecutive elements form the columns, also
-	// called 'fortran-order'
-	col_major,
-
-	// linear storage in which consecutive elements form the rows of data,
-	// also called c-order
-	row_major,
-};
-
-
-// operator<< usually used in std::cout
-// TODO: remove or disable?
-inline std::ostream&
-operator<<(std::ostream &os, const storage_order order)
-{
-	switch (order) {
-		case storage_order::col_major: os << "col_major"; break;
-		case storage_order::row_major: os << "row_major"; break;
-	}
-	return os;
-}
-
-
-
-template <typename T = size_t>
-std::vector<T>
-unravel_index(int index, const std::vector<T>& shape, storage_order order)
-{
-	int n = shape.size();
-	std::vector<int> indices(n);
-
-	switch (order) {
-	case storage_order::row_major:
-		for (int i = n - 1; i >= 0; --i) {
-			indices[i] = index % shape[i];
-			index /= shape[i];
-		}
-		break;
-
-	case storage_order::col_major:
-		for (int i = 0; i < n; ++i) {
-			indices[i] = index % shape[i];
-			index /= shape[i];
-		}
-		break;
-	}
-
-	return indices;
-}
-
-
-template <typename T = size_t>
-std::vector<T>
-unravel_index_strided(size_t offset, const std::vector<T> &strides, storage_order order)
-{
-	std::vector<T> indices(strides.size());
-
-	switch (order) {
-	case storage_order::row_major:
-		for (size_t i = 0; i < strides.size(); ++i) {
-			size_t currentStride = strides[i];
-			size_t currentIndex = offset / currentStride;
-			offset %= currentStride;
-			indices[i] = currentIndex;
-		}
-		break;
-
-	case storage_order::col_major:
-		for (size_t i = strides.size(); i-- > 0;) {
-			size_t currentStride = strides[i];
-			size_t currentIndex = offset / currentStride;
-			offset %= currentStride;
-			indices[i] = currentIndex;
-		}
-		break;
-	}
-
-	return indices;
-}
-
-// array with dimensions N_1 x N_2 x ... x N_d and index tuple (n_1,
-// n_2, ..., n_d), n_k ∈ [0, N_k - 1]:
-//
-// formula for row-major: sum_{k=1}^d (prod_{l=k+1}^d N_l) * n_k
-// formula for col-major: sum_{k=1}^d (prod_{l=1}^{k-1} N_l) * n_k
-
-
-template <typename T = size_t>
-T
-stride_row_major(const std::vector<T> &shape, ssize_t l)
-{
-	size_t s = 1;
-	for (; ++l < (ssize_t)shape.size(); )
-		s *= shape[l];
-	return s;
-}
-
-
-template <typename T = size_t>
-T
-stride_col_major(const std::vector<T> &shape, ssize_t k)
-{
-	size_t s = 1;
-	for (; --k >= 0; )
-		s *= shape[k];
-	return s;
-}
-
-
-template <typename T = size_t, bool single_loop = true>
-void
-compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_order order)
-{
-	strides.resize(shape.size());
-
-	if constexpr (single_loop) {
-		T total = 1;
-		switch (order) {
-		case storage_order::row_major:
-			for (size_t i = shape.size(); i-- > 0; ) {
-				strides[i] = total;
-				total *= shape[i];
-			}
-			break;
-
-		case storage_order::col_major:
-			for (size_t i = 0; i < shape.size(); ++i) {
-				strides[i] = total;
-				total *= shape[i];
-			}
-			break;
-		}
-	}
-	else {
-		T (*fptr)(const std::vector<T> &shape, ssize_t);
-		switch (order) {
-		case storage_order::row_major:
-			fptr = &stride_row_major<T>;
-			break;
-		case storage_order::col_major:
-			fptr = &stride_col_major<T>;
-			break;
-		}
-		for (size_t k = 0; k < shape.size(); k++)
-			strides[k] = (*fptr)(shape, k);
-	}
-}
-
-
-
-/*
- * dtype - data type description of elements in the ndarray
- *
- * In case of structured arrays, only the values in the fields might be properly
- * filled in. Note also that structured arrays can have types with arbitrarily
- * deep nesting of sub-structures. To determine if a (sub-)dtype is a structured
- * array, you can query is_structured_array(), which simply tests if there are
- * fields within this dtype.
- *
- * Note that fields in a dtype which are leaves, i.e. are basic types, will
- * return false for is_structured_array.
- *
- * Note that structured arrays might contain types with mixed endianness.
- */
-struct dtype
-{
-	// name of the field in case of strutured arrays. for basic types this is
-	// empty.
-	std::string
-		name       = "";
-
-	// byte order of the data
-	byte_order
-		endianness = byte_order::native;
-
-	// single character type code (see table at start of this file)
-	u8
-		type_code  = 0;
-
-	// size of the data in bytes, e.g. bytes of an integer or characters in a
-	// unicode string
-	u32
-		size       = 0;
-
-	// size of an item in bytes in this dtype (e.g. U16 is a 16-character
-	// unicode string, each character using 4 bytes.  hence, item_size = 64
-	// bytes).
-	u64
-		item_size  = 0;
-
-	// offset of the field if this is a field in a structured array, otherwise
-	// this will be (most likely) 0
-	u64
-		offset     = 0;
-
-	// numpy's shape has python 'int', which is commonly a 64bit integer. see
-	// python's sys.maxsize to get the maximum value, log(sys.maxsize,2)+1 will
-	// tell the number of bits used on a machine. Here, we simply assume that
-	// a u64 is enough.
-	std::vector<u64>
-		shape      = {};
-
-	// structured arrays will contain fields, which are themselves dtypes
-	std::vector<dtype>
-		fields     = {};
-};
-
-
-
-template <>
-inline bool
-is_structured_array<dtype>(const dtype &dtype)
-{
-	return !dtype.fields.empty();
-}
-
-
-inline
-const dtype*
-find_field(const dtype &current_dtype, const std::string& field_name)
-{
-	for (const auto &field: current_dtype.fields) {
-		if (field.name == field_name) {
-			return &field;
-		}
-	}
-	return nullptr;
-}
-
-
-template <typename First, typename... Rest>
-const dtype*
-get_nested_dtype(const dtype &current_dtype, const First& first, const Rest&... rest)
-{
-	const dtype* next_dtype = find_field(current_dtype, first);
-	if (!next_dtype)
-		return nullptr;
-
-	if constexpr (sizeof...(rest) == 0)
-		return next_dtype;
-	else
-		return get_nested_dtype(*next_dtype, rest...);
-}
-
-
-//
-// basic dtypes
-//
-inline dtype dtype_int16()  { return {.type_code = 'i', .size=2, .item_size=2}; }
-inline dtype dtype_int32()  { return {.type_code = 'i', .size=4, .item_size=4}; }
-inline dtype dtype_int64()  { return {.type_code = 'i', .size=8, .item_size=8}; }
-
-inline dtype dtype_uint16() { return {.type_code = 'u', .size=2, .item_size=2}; }
-inline dtype dtype_uint32() { return {.type_code = 'u', .size=4, .item_size=4}; }
-inline dtype dtype_uint64() { return {.type_code = 'u', .size=8, .item_size=8}; }
-
-inline dtype dtype_float16() { return {.type_code = 'f', .size=2, .item_size=2}; }
-inline dtype dtype_float32() { return {.type_code = 'f', .size=4, .item_size=4}; }
-inline dtype dtype_float64() { return {.type_code = 'f', .size=8, .item_size=8}; }
-
-
-//
-// forward declarations (required due to indirect recursion)
-//
-inline void serialize_dtype(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_descr(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_fields(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_typestr(std::ostream &s, const dtype &dtype);
-inline void serialize_fortran_order(std::ostream &s, storage_order o);
-inline void serialize_shape(std::ostream &s, const dtype &dtype);
-
-
-inline void
-serialize_dtype_typestr(std::ostream &s, const dtype &dtype)
-{
-	s << "'" << to_char(dtype.endianness) << dtype.type_code << dtype.size << "'";
-}
-
-
-inline void
-serialize_shape(std::ostream &s, const u64_vector &shape)
-{
-	s << "(";
-	for (auto size: shape)
-		s << size << ",";
-	s << ")";
-}
-
-
-inline void
-serialize_dtype_fields(std::ostream &s, const dtype &dtype)
-{
-	s << "[";
-	size_t i = 0;
-	for (auto &f: dtype.fields) {
-		if (i++ > 0) s << ", ";
-		serialize_dtype(s, f);
-	}
-	s << "]";
-}
-
-
-inline void
-serialize_dtype(std::ostream &s, const dtype &dtype)
-{
-	s << "('" << dtype.name << "', ";
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
-	else {
-		serialize_dtype_typestr(s, dtype);
-		if (dtype.shape.size() > 0) {
-			s << ", ";
-			serialize_shape(s, dtype.shape);
-		}
-	}
-	s << ")";
-}
-
-
-inline void
-serialize_dtype_descr(std::ostream &s, const dtype &dtype)
-{
-	s << "'descr': ";
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
-	else
-		serialize_dtype_typestr(s, dtype);
-}
-
-inline void
-serialize_fortran_order(std::ostream &s, storage_order o)
-{
-	s << "'fortran_order': " << (o == storage_order::col_major ? "True" : "False");
-}
-
-
-// operator<< usually used in std::cout
-// TODO: remove or disable?
-inline std::ostream&
-operator<< (std::ostream &os, const dtype &dtype)
-{
-	std::ostringstream s;
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
-	else
-		serialize_dtype_typestr(s, dtype);
-	os << s.str();
-	return os;
-}
 
 
 /*
@@ -468,7 +71,7 @@ operator<< (std::ostream &os, const dtype &dtype)
 struct ndarray_item
 {
 	ndarray_item() = delete;
-	ndarray_item(u8_subrange &&_ra, dtype &_dt) : _r(_ra), _dtype(_dt) {}
+	ndarray_item(u8_subrange &&_ra, struct dtype &_dt) : _r(_ra), _dtype(_dt) {}
 	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dtype) : _r(u8_subrange(begin, end)), _dtype(dtype) {}
 
 
@@ -507,8 +110,8 @@ struct ndarray_item
 
 
 	inline
-	const dtype&
-	type() const {
+	const struct dtype&
+	dtype() const {
 		return _dtype;
 	}
 
@@ -531,7 +134,7 @@ private:
 	const u8_subrange _r;
 
 	// the data type of the item (equal to the data type of its ndarray)
-	const dtype &_dtype;
+	const struct dtype &_dtype;
 };
 
 
@@ -564,7 +167,7 @@ template <typename T, typename... Args>
 const T
 ndarray_item::field(const ndarray_item &item, Args&&... args)
 {
-	const dtype *dtype = get_nested_dtype(item.type(), args...);
+	const struct dtype *dtype = get_nested_dtype(item.dtype(), args...);
 	if (!dtype)
 		throw std::runtime_error("Field not found: " + (... + ('/' + std::string(args))));
 	return field_extractor<T>::get_field(item, *dtype);
@@ -587,7 +190,7 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(std::initializer_list<u64> shape,
-	        dtype dtype = dtype_float64(),
+	        struct dtype dtype = dtype_float64(),
 	        storage_order o = storage_order::row_major)
 	: _dtype(dtype), _shape{shape}, _size(0), _order(o)
 	{
@@ -599,7 +202,7 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(u64_vector shape,
-	        dtype dtype = dtype_float64(),
+	        struct dtype dtype = dtype_float64(),
 	        storage_order o = storage_order::row_major)
 	: _dtype(dtype), _shape(shape), _size(0), _order(o)
 	{
@@ -609,7 +212,7 @@ struct ndarray
 	}
 
 
-	ndarray(dtype &&dtype,
+	ndarray(struct dtype &&dtype,
 	        u64_vector &&shape,
 	        u8_vector &&buffer,
 	        storage_order o = storage_order::row_major)
@@ -924,7 +527,7 @@ struct ndarray
 	{
 		std::ostringstream s;
 		s << "{";
-		serialize_dtype_descr(s, type());
+		serialize_dtype_descr(s, dtype());
 		s << ", ";
 		serialize_fortran_order(s, _order);
 		if (_shape.size() > 0) {
@@ -941,7 +544,7 @@ struct ndarray
 	//
 	// property getters
 	//
-	const dtype&        type()  const { return _dtype; }
+	const struct dtype& dtype() const { return _dtype; }
 	storage_order       order() const { return _order; }
 	const u64_vector&   shape() const { return _shape; }
 	const u8_vector&    data()  const { return _data;  }
@@ -949,7 +552,7 @@ struct ndarray
 
 private:
 	// _data stores the type information of the array
-	dtype         _dtype;
+	struct dtype        _dtype;
 
 	// _shape contains the shape of the array, meaning the size of each
 	// dimension. Example: a shape of [2,3] would mean an array of size 2x3,
@@ -1031,7 +634,7 @@ template <>
 inline bool
 is_structured_array<ndarray>(const ndarray &arr)
 {
-	return !arr.type().fields.empty();
+	return !arr.dtype().fields.empty();
 }
 
 
