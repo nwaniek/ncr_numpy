@@ -23,7 +23,10 @@ template <typename T, size_t N = 0> std::string to_string(const T &t);
 
 
 /*
- * ucs4string - fixed width Unicode string based on UCS-4
+ * ucs4string<N> - fixed-length unicode string in UCS-4 encoding
+ *
+ * This is a fixed-length unicode string that uses std::array as internal
+ * storage container.
  *
  * When working with python/numpy, one can assume that most strings are likely
  * encoded as UCS-4 strings, meaning 4 bytes per character.
@@ -43,6 +46,12 @@ struct ucs4string
 };
 
 
+/*
+ * ucs4string<0> - variable-length with unicode string in UCS-4 encoding
+ *
+ * This is a variable-length unicode string, its internal storage container is
+ * std::vector. For more details about UCS-4, see ucs4string<N>.
+ */
 template <>
 struct ucs4string<0>
 {
