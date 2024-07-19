@@ -4,10 +4,7 @@
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
- *
- * TODO: encapsulate in namespace ncr
  */
-
 #pragma once
 
 #ifndef NCR_TYPES
@@ -29,6 +26,8 @@
 	#include <ranges>
 	#include <vector>
 #endif
+
+namespace ncr {
 
 
 using i8           = std::int8_t;
@@ -93,3 +92,6 @@ using u64_subrange       = std::ranges::subrange<u64_iterator>;
 using u64_const_iterator = u64_vector::const_iterator;
 using u64_const_subrange = std::ranges::subrange<u64_const_iterator>;
 #endif
+
+
+} // ncr::

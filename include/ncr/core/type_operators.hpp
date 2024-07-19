@@ -1,5 +1,5 @@
 /*
- * type_operators.hpp - operators for basic types used in ncr
+ * type_operators.hpp - special operators for basic types used in ncr
  *
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT

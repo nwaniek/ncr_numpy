@@ -28,9 +28,9 @@
 #include <iomanip>
 #include <iostream>
 
-#include <ncr/common/types.hpp>
-#include <ncr/common/bits.hpp>
-#include <ncr/common/unicode.hpp>
+#include <ncr/core/types.hpp>
+#include <ncr/core/bits.hpp>
+#include <ncr/core/unicode.hpp>
 
 #include "core.hpp"
 #include "dtype.hpp"

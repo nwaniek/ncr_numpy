@@ -105,9 +105,10 @@
 #include <variant>
 #include <unordered_set>
 
-#include <ncr/common/types.hpp>
-#include <ncr/common/bits.hpp>
-#include <ncr/common/zip.hpp>
+#include <ncr/core/types.hpp>
+#include <ncr/core/bits.hpp>
+#include <ncr/core/zip.hpp>
+#include <ncr/core/filesystem.hpp>
 #include "pyparser.hpp"
 #include "ndarray.hpp"
 

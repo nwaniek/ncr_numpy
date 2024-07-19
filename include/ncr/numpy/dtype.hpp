@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <ncr/common/types.hpp>
+#include <ncr/core/types.hpp>
 
 #include "core.hpp"
 #include "declarations.hpp"

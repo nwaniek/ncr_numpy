@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
-#include <ncr/common/utils.hpp>
-#include <ncr/common/string.hpp>
-#include <ncr/common/impl/zip_libzip.hpp>
-#include <ncr/common/unicode.hpp>
+#include <ncr/core/utils.hpp>
+#include <ncr/core/string.hpp>
+#include <ncr/core/impl/zip_libzip.hpp>
+#include <ncr/core/unicode.hpp>
 #include <ncr/numpy.hpp>
 
 #ifndef VERSION_MAJOR
@@ -24,6 +24,8 @@
 #endif
 
 
+using namespace ncr;
+
 
 /*
  * example_ndarray - simple ndarray examples
@@ -34,11 +36,11 @@ example_ndarray()
 	std::cout << "ndarray example\n";
 	std::cout << "---------------";
 
-	ncr::numpy::ndarray array({2, 2}, ncr::numpy::dtype_float32());
+	numpy::ndarray array({2, 2}, numpy::dtype_float32());
 	std::cout << "\nshape: ";
-	ncr::numpy::serialize_shape(std::cout, array.shape());
+	numpy::serialize_shape(std::cout, array.shape());
 	std::cout << "\ndtype: ";
-	ncr::numpy::serialize_dtype(std::cout, array.dtype());
+	numpy::serialize_dtype(std::cout, array.dtype());
 	std::cout << "\n";
 	std::cout << array.get_type_description() << "\n";
 
@@ -74,48 +76,48 @@ example_simple_api(size_t padwidth = 30)
 	std::cout << "Simple API\n";
 	std::cout << "----------";
 
-	auto val = ncr::numpy::load("assets/in/simple.npy");
+	auto val = numpy::load("assets/in/simple.npy");
 	std::cout << std::boolalpha << "\n";
-	std::cout << ncr::strpad("simple.npy:", padwidth) << std::holds_alternative<ncr::numpy::ndarray>(val) << "\n";
-	print_tensor<i64>(std::get<ncr::numpy::ndarray>(val), "  ");
+	std::cout << strpad("simple.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
+	print_tensor<i64>(std::get<numpy::ndarray>(val), "  ");
 	std::cout << "\n\n";
 
 
-	val = ncr::numpy::load("assets/in/simpletensor1.npy");
-	std::cout << ncr::strpad("simpletensor1.npy:", padwidth) << std::holds_alternative<ncr::numpy::ndarray>(val) << "\n";
-	print_tensor<f64>(std::get<ncr::numpy::ndarray>(val), "  ");
+	val = numpy::load("assets/in/simpletensor1.npy");
+	std::cout << strpad("simpletensor1.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
+	print_tensor<f64>(std::get<numpy::ndarray>(val), "  ");
 	std::cout << "\n\n";
 
 
-	val = ncr::numpy::load("assets/in/simpletensor2.npy");
-	std::cout << ncr::strpad("simpletensor2.npy:", padwidth) << std::holds_alternative<ncr::numpy::ndarray>(val) << "\n";
-	print_tensor<i64>(std::get<ncr::numpy::ndarray>(val), "  ");
+	val = numpy::load("assets/in/simpletensor2.npy");
+	std::cout << strpad("simpletensor2.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
+	print_tensor<i64>(std::get<numpy::ndarray>(val), "  ");
 	std::cout << "\n\n";
 
 
-	val = ncr::numpy::load("assets/in/complex.npy");
-	std::cout << ncr::strpad("complex.npy:", padwidth) << std::holds_alternative<ncr::numpy::ndarray>(val) << "\n";
+	val = numpy::load("assets/in/complex.npy");
+	std::cout << strpad("complex.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
 	// the data in this tensor needs a byteswap because it is stored in
 	// big-endian, while most systems actually are little-endian. We can apply
 	// the transform in the print_tensor function
 	std::cout << "big-endian complex valued array transformed to little-endian on-the-fly:\n";
-	print_tensor<c64>(std::get<ncr::numpy::ndarray>(val), "  ", [](c64 val){ return ncr::bswap<c64>(val); });
+	print_tensor<c64>(std::get<numpy::ndarray>(val), "  ", [](c64 val){ return bswap<c64>(val); });
 	std::cout << "\n\n";
 
 	// another way to transform values is with the 'transform' method, which
 	// transforms them given a function during the call. The example above used
-	// a lambda to wrap ncr::bswap. However, ncr::bswap itself is a function
+	// a lambda to wrap bswap. However, bswap itself is a function
 	// that fits the required signature. We can directly pass it to transform
 	// instead of using a lambda. The numbers after the function are the indices
 	// of the value which we want to transform
-	auto arr = std::get<ncr::numpy::ndarray>(val);
+	auto arr = std::get<numpy::ndarray>(val);
 	std::cout << "endianness transform during call to .transform(): ";
-	std::cout << arr.transform<c64>(ncr::bswap<c64>, 1, 1) << "\n";
+	std::cout << arr.transform<c64>(bswap<c64>, 1, 1) << "\n";
 
 	// can also call apply() and transform each value in the array. Note that
 	// there are different variants of apply, which might be useful when working
 	// with structured arrays
-	arr.apply<c64>(ncr::bswap<c64>);
+	arr.apply<c64>(bswap<c64>);
 	// after the previous line, all values are byteswapped within the array. we
 	// can now use it regularly without having to transform it again
 	std::cout << "array after endianness was changed in-place during call to .apply():\n";
@@ -123,20 +125,20 @@ example_simple_api(size_t padwidth = 30)
 	std::cout << "\n\n";
 
 
-	val = ncr::numpy::load("assets/in/structured.npy");
-	std::cout << ncr::strpad("structured.npy:", padwidth) << std::holds_alternative<ncr::numpy::ndarray>(val) << "\n";
+	val = numpy::load("assets/in/structured.npy");
+	std::cout << strpad("structured.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
 
 
-	val = ncr::numpy::load("assets/in/multiple_named.npz");
-	std::cout << ncr::strpad("multiple_named.npz:", padwidth) << std::holds_alternative<ncr::numpy::npzfile>(val) << "\n";
+	val = numpy::load("assets/in/multiple_named.npz");
+	std::cout << strpad("multiple_named.npz:", padwidth) << std::holds_alternative<numpy::npzfile>(val) << "\n";
 
 	// try to load a file that does not exist. the variant will contain an
-	// ncr::numpy::result with the error code describing what happened.
-	val = ncr::numpy::load("assets/in/does_not_exist.npy");
-	if (std::holds_alternative<ncr::numpy::result>(val))
-		std::cout << ncr::strpad("does_not_exist.npy:", padwidth) << std::get<ncr::numpy::result>(val) << "\n";
+	// numpy::result with the error code describing what happened.
+	val = numpy::load("assets/in/does_not_exist.npy");
+	if (std::holds_alternative<numpy::result>(val))
+		std::cout << strpad("does_not_exist.npy:", padwidth) << std::get<numpy::result>(val) << "\n";
 	else
-		std::cout << ncr::strpad("does_not_exist.npy:", padwidth) << "surprisingly, file was found o_O\n";
+		std::cout << strpad("does_not_exist.npy:", padwidth) << "surprisingly, file was found o_O\n";
 	std::cout << "\n";
 }
 
@@ -147,33 +149,33 @@ example_simple_api(size_t padwidth = 30)
 void
 example_advanced_api(size_t padwidth = 30)
 {
-	ncr::numpy::npyfile npy;
-	ncr::numpy::npzfile npz;
-	ncr::numpy::ndarray arr;
+	numpy::npyfile npy;
+	numpy::npzfile npz;
+	numpy::ndarray arr;
 
 	std::cout << "Advanced API\n";
 	std::cout << "------------\n";
 
-	std::cout << ncr::strpad("simple.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simple.npy", arr, &npy) << "\n";
+	std::cout << strpad("simple.npy:", padwidth) << numpy::from_npy("assets/in/simple.npy", arr, &npy) << "\n";
 
-	ncr::numpy::clear(npy);
-	std::cout << ncr::strpad("simpletensor1.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr, &npy) << "\n";
+	numpy::clear(npy);
+	std::cout << strpad("simpletensor1.npy:", padwidth) << numpy::from_npy("assets/in/simpletensor1.npy", arr, &npy) << "\n";
 
-	ncr::numpy::clear(npy);
-	std::cout << ncr::strpad("simpletensor2.npy:", padwidth) << ncr::numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy) << "\n";
+	numpy::clear(npy);
+	std::cout << strpad("simpletensor2.npy:", padwidth) << numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy) << "\n";
 
-	ncr::numpy::clear(npy);
-	std::cout << ncr::strpad("complex.npy:", padwidth) << ncr::numpy::from_npy("assets/in/complex.npy", arr, &npy) << "\n";
+	numpy::clear(npy);
+	std::cout << strpad("complex.npy:", padwidth) << numpy::from_npy("assets/in/complex.npy", arr, &npy) << "\n";
 
-	ncr::numpy::clear(npy);
-	std::cout << ncr::strpad("structured.npy:", padwidth) << ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy) << "\n";
+	numpy::clear(npy);
+	std::cout << strpad("structured.npy:", padwidth) << numpy::from_npy("assets/in/structured.npy", arr, &npy) << "\n";
 
-	std::cout << ncr::strpad("multiple_named.npz:", padwidth) << ncr::numpy::from_npz("assets/in/multiple_named.npz", npz) << "\n";
+	std::cout << strpad("multiple_named.npz:", padwidth) << numpy::from_npz("assets/in/multiple_named.npz", npz) << "\n";
 	/// accessing existing arrays
 	for (auto const& name: npz.names) {
 		auto shape = npz[name].shape();
 		std::cout << "    " << name << ".shape = ";
-		ncr::numpy::serialize_shape(std::cout, shape);
+		numpy::serialize_shape(std::cout, shape);
 		std::cout << "\n";
 	}
 	// trying to access an array which does not exist will throw an
@@ -188,7 +190,7 @@ example_advanced_api(size_t padwidth = 30)
 	// attempt to open a file that does not exist. should produce
 	// "error_file_not_found"
 	std::cout << "\n";
-	std::cout << ncr::strpad("invalid.npz:", padwidth) << ncr::numpy::from_npz("assets/in/invalid.npz", npz) << "\n";
+	std::cout << strpad("invalid.npz:", padwidth) << numpy::from_npz("assets/in/invalid.npz", npz) << "\n";
 
 	std::cout << "\n";
 }
@@ -203,31 +205,31 @@ example_serialization(size_t padwidth = 30)
 	std::cout << "Serialization examples: npy files\n";
 	std::cout << "---------------------------------\n";
 
-	ncr::numpy::ndarray arr;
-	ncr::numpy::npyfile npy;
-	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
-	std::cout << ncr::strpad("write test:", padwidth) << ncr::numpy::save("assets/out/structured.npy", arr, true) << "\n";
+	numpy::ndarray arr;
+	numpy::npyfile npy;
+	numpy::from_npy("assets/in/structured.npy", arr, &npy);
+	std::cout << strpad("write test:", padwidth) << numpy::save("assets/out/structured.npy", arr, true) << "\n";
 
 	std::cout << "\n";
 	std::cout << "Serialization examples: npz files\n";
 	std::cout << "---------------------------------\n";
 
 	// test npz -> load some of the files, and write them as npz.
-	ncr::numpy::ndarray arr0 = ncr::numpy::get_ndarray(ncr::numpy::load("assets/in/simple.npy"));
-	std::cout << ncr::strpad("save simple.npz:", padwidth) << ncr::numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true) << "\n";
+	numpy::ndarray arr0 = numpy::get_ndarray(numpy::load("assets/in/simple.npy"));
+	std::cout << strpad("save simple.npz:", padwidth) << numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true) << "\n";
 
 	// load some data that is then written to npz files
-	ncr::numpy::variant_result val;
-	ncr::numpy::ndarray arr1 = ncr::numpy::get_ndarray(ncr::numpy::load("assets/in/simpletensor1.npy"));
-	ncr::numpy::ndarray arr2 = ncr::numpy::get_ndarray(ncr::numpy::load("assets/in/complex.npy"));
+	numpy::variant_result val;
+	numpy::ndarray arr1 = numpy::get_ndarray(numpy::load("assets/in/simpletensor1.npy"));
+	numpy::ndarray arr2 = numpy::get_ndarray(numpy::load("assets/in/complex.npy"));
 
 	// save the arrays with names
-	std::cout << ncr::strpad("savez_named:", padwidth) << ncr::numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
-	std::cout << ncr::strpad("savez_named_compressed:", padwidth) << ncr::numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
+	std::cout << strpad("savez_named:", padwidth) << numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
+	std::cout << strpad("savez_named_compressed:", padwidth) << numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
 
 	// save the arrays without names (creates arr_0, arr_1, ...)
-	std::cout << ncr::strpad("savez_unnamed:", padwidth) << ncr::numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true) << "\n";
-	std::cout << ncr::strpad("savez_unnamed_compressed:", padwidth) << ncr::numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true) << "\n";
+	std::cout << strpad("savez_unnamed:", padwidth) << numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true) << "\n";
+	std::cout << strpad("savez_unnamed_compressed:", padwidth) << numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true) << "\n";
 
 
 	std::cout << "\n";
@@ -240,13 +242,13 @@ example_serialization(size_t padwidth = 30)
 	// the hex dump of the files:
 	std::cout << "assets/in/structured.npy:\n";
 	u8_vector buf_in;
-	ncr::buffer_from_file("assets/in/structured.npy", buf_in);
-	ncr::hexdump(std::cout, buf_in);
+	read_file("assets/in/structured.npy", buf_in);
+	hexdump(std::cout, buf_in);
 
 	std::cout << "assets/out/structured.npy: \n";
 	u8_vector buf_out;
-	ncr::buffer_from_file("assets/out/structured.npy", buf_out);
-	ncr::hexdump(std::cout, buf_out);
+	read_file("assets/out/structured.npy", buf_out);
+	hexdump(std::cout, buf_out);
 }
 
 
@@ -262,9 +264,9 @@ example_facade()
 	// we can create facades for arrays, which wrap operator(). This makes
 	// working with ndarrays even easier than with the basic ndarray itself if
 	// you know the underlying type of your data.
-	ncr::numpy::ndarray_t<f64> arr;
-	ncr::numpy::from_npy("assets/in/simpletensor1.npy", arr);
-	std::cout << "shape: "; ncr::numpy::serialize_shape(std::cout, arr.shape()); std::cout << "\n";
+	numpy::ndarray_t<f64> arr;
+	numpy::from_npy("assets/in/simpletensor1.npy", arr);
+	std::cout << "shape: "; numpy::serialize_shape(std::cout, arr.shape()); std::cout << "\n";
 	std::cout << "\narray before changes\n"	;
 	print_tensor(arr, "  ");
 	std::cout << "\n";
@@ -299,7 +301,7 @@ struct student_t
 	// each student has a name, stored as a unicode string with UCS-4 encoding
 	// per character (see https://numpy.org/doc/stable/reference/arrays.dtypes.html
 	// for more details)
-	ncr::ucs4string<16>
+	ucs4string<16>
 		name;
 
 	// each student has two grades, stored as a 64bit float
@@ -319,26 +321,26 @@ example_structured()
 	std::cout << "-------------------------------------\n";
 	{
 		// variable width, internally stored as std::vector
-		ncr::ucs4string str0 = ncr::to_ucs4("Hello, World");
-		ncr::utf8string str1 = ncr::to_utf8(str0);
+		ucs4string str0 = to_ucs4("Hello, World");
+		utf8string str1 = to_utf8(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
 		// variable width, internally stored as std::vector
-		ncr::utf8string str0 = ncr::to_utf8("Hello, World");
-		ncr::ucs4string str1 = ncr::to_ucs4(str0);
+		utf8string str0 = to_utf8("Hello, World");
+		ucs4string str1 = to_ucs4(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		ncr::ucs4string<20> str0 = ncr::to_ucs4<20>("Hello, World");
-		ncr::utf8string<20> str1 = ncr::to_utf8(str0);
+		ucs4string<20> str0 = to_ucs4<20>("Hello, World");
+		utf8string<20> str1 = to_utf8(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	{
-		ncr::utf8string<20> str0 = ncr::to_utf8<20>("Hello, World");
+		utf8string<20> str0 = to_utf8<20>("Hello, World");
 		// Note: for fixed-size ucs4 strings, to_ucs4 requires at least one
 		//       template argument.
-		ncr::ucs4string<20> str1 = ncr::to_ucs4<20>(str0);
+		ucs4string<20> str1 = to_ucs4<20>(str0);
 		std::cout << str0 << " :: " << str1 << "\n";
 	}
 	std::cout << "\n";
@@ -346,9 +348,9 @@ example_structured()
 	std::cout << "Examples for structured arrays\n";
 	std::cout << "------------------------------\n";
 
-	ncr::numpy::ndarray arr;
-	ncr::numpy::npyfile npy;
-	ncr::numpy::from_npy("assets/in/structured.npy", arr, &npy);
+	numpy::ndarray arr;
+	numpy::npyfile npy;
+	numpy::from_npy("assets/in/structured.npy", arr, &npy);
 
 	std::cout << arr.dtype() << "\n";
 	std::cout << "sizeof(student_t):  " << sizeof(student_t) << "\n";
@@ -382,7 +384,7 @@ example_structured()
 #pragma pack(push, 1)
 struct country_gdp_record_packed_t
 {
-	ncr::ucs4string<16>
+	ucs4string<16>
 		country_name;
 
 	u64
@@ -398,7 +400,7 @@ struct country_gdp_record_packed_t
  */
 struct country_gdp_record_t
 {
-	ncr::ucs4string<16>
+	ucs4string<16>
 		country_name;
 
 	u64
@@ -446,9 +448,9 @@ inline std::ostream&
 operator<< (std::ostream &os, const year_gdp_record_t &record)
 {
 	os << "  " << record.year << "\n";
-	os << "    " << ncr::strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
-	os << "    " << ncr::strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
-	os << "    " << ncr::strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+	os << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+	os << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+	os << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
 	return os;
 }
 
@@ -460,7 +462,7 @@ operator<< (std::ostream &os, const year_gdp_record_t &record)
  * TODO: move to a better place
  */
 void
-inspect_dtype(const ncr::numpy::dtype &dtype, std::string indent = "")
+inspect_dtype(const numpy::dtype &dtype, std::string indent = "")
 {
 	for (const auto &field_dtype: dtype.fields) {
 		std::cout << indent << field_dtype.name
@@ -483,9 +485,9 @@ example_nested()
 	std::cout << "Examples for working with nested structured arrays\n";
 	std::cout << "--------------------------------------------------\n";
 
-	ncr::numpy::ndarray arr;
-	ncr::numpy::npyfile npy;
-	ncr::numpy::from_npy("assets/in/nested.npy", arr, &npy);
+	numpy::ndarray arr;
+	numpy::npyfile npy;
+	numpy::from_npy("assets/in/nested.npy", arr, &npy);
 
 	// make sure that the sizes correspond when using methods that cast (e.g.
 	// apply, value)! To achieve this, it might not be sufficient to simply have
@@ -494,10 +496,10 @@ example_nested()
 	// padding.
 
 	// the hexdump can be useful to compare the type description create by
-	// ncr::numpy::ndarray and the one stored in the file
+	// numpy::ndarray and the one stored in the file
 	u8_vector buf_in;
-	ncr::buffer_from_file("assets/in/nested.npy", buf_in);
-	ncr::hexdump(std::cout, buf_in);
+	read_file("assets/in/nested.npy", buf_in);
+	hexdump(std::cout, buf_in);
 
 	std::cout << "\n";
 	std::cout << "dtype information\n";
@@ -524,9 +526,9 @@ example_nested()
 	arr.apply<year_gdp_record_packed_t>(
 		[](year_gdp_record_packed_t &record) {
 			std::cout << "  " << record.year << "\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
 			// don't forget to return (see definition of apply for details)
 			return record;
 		});
@@ -539,12 +541,12 @@ example_nested()
 	// required type via ndarray_item::as.
 	std::cout << "\n";
 	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
-	arr.map([](const ncr::numpy::ndarray_item &item) {
+	arr.map([](const numpy::ndarray_item &item) {
 			auto &record = item.as<year_gdp_record_packed_t>();
 			std::cout << "  " << record.year << "\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
-			std::cout << "    " << ncr::strpad(ncr::to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
+			std::cout << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
 		});
 	// note that, in principle, it's also possible to use ndarray_t for packed
 	// PODs.
@@ -562,7 +564,7 @@ example_nested()
 	// map the data into our custom structs using the array's map function and a
 	// suitable lambda/callback
 	old_state.copyfmt(std::cout);
-	arr.map([](const ncr::numpy::ndarray_item &item) {
+	arr.map([](const numpy::ndarray_item &item) {
 		// Manually map each field into a struct member.
 		//
 		// The example shows how to use either the static ::field method of
@@ -575,15 +577,15 @@ example_nested()
 		// field_extractor in ncr_ndarray.hpp
 
 		year_gdp_record_t record;
-		record.year = ncr::numpy::ndarray_item::field<u32>(item, "year");
+		record.year = numpy::ndarray_item::field<u32>(item, "year");
 
-		record.c1.country_name = ncr::numpy::ndarray_item::field<ncr::ucs4string<16>>(item, "countries", "c1", "country");
-		record.c1.gdp  = ncr::numpy::ndarray_item::field<u64>(item, "countries", "c1", "gdp");
+		record.c1.country_name = numpy::ndarray_item::field<ucs4string<16>>(item, "countries", "c1", "country");
+		record.c1.gdp  = numpy::ndarray_item::field<u64>(item, "countries", "c1", "gdp");
 
-		record.c2.country_name = ncr::numpy::ndarray_item::field<ncr::ucs4string<16>>(item, "countries", "c2", "country");
+		record.c2.country_name = numpy::ndarray_item::field<ucs4string<16>>(item, "countries", "c2", "country");
 		record.c2.gdp  = item.get_field<u64>("countries", "c2", "gdp");
 
-		record.c3.country_name = item.get_field<ncr::ucs4string<16>>("countries", "c3", "country");
+		record.c3.country_name = item.get_field<ucs4string<16>>("countries", "c3", "country");
 		record.c3.gdp  = item.get_field<u64>("countries", "c3", "gdp");
 
 		std::cout << record;

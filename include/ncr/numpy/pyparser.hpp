@@ -8,9 +8,11 @@
 #pragma once
 
 #include <memory>
-#include <ncr/common/types.hpp>
-#include <ncr/common/type_operators.hpp>
-#include <ncr/common/utils.hpp>
+#include <ncr/core/types.hpp>
+#include <ncr/core/type_operators.hpp>
+#include <ncr/core/utils.hpp>
+#include <ncr/core/memory.hpp>
+#include <ncr/core/common.hpp>
 
 
 namespace ncr { namespace numpy {
