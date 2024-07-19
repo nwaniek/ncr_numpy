@@ -47,7 +47,7 @@ Thus, either add the path to `ncr_numpy` to your list of includes or copy the
 header files to your preferred location. Also make sure to compile a zip backend
 implementation if you want to use npz files. Currently, `ncr_numpy` ships with
 an implementation that is based on `libzip <libzip>`_ in file
-`ncr/common/impl/zip_libzip.hpp <include/ncr/common/impl/zip_libzip.hpp>`_. A simple
+`ncr/core/impl/zip_libzip.hpp <include/ncr/core/impl/zip_libzip.hpp>`_. A simple
 `Makefile <examples/Makefile>`_ as well as a basic `CMakeLists.txt <examples/CMakeLists.txt>`_
 can be found in the `examples <examples>`_ folder.
 
@@ -246,6 +246,15 @@ a look at mature C++ math libraries such as
 `Eigen <https://eigen.tuxfamily.org>`_,
 `blaze <https://github.com/dendisuhubdy/blaze>`_, or
 `Armadillo <https://arma.sourceforge.net>`_.
+
+**Q**: what are `include/ncr/core <include/ncr/core>`_ and `include/ncr/core.hpp <include/ncr/core.hpp>`_?
+**A**: They belong to `ncr_core`, a separate header only library that is used in
+a variety of projects. Essentially, `ncr_core` contains basic definitions,
+algorithms, and data structures. It does not change much, and development of it
+happens within its own repository. The files shipped with `ncr_numpy` are simply
+copied from that other repository.
+Both `ncr_core` and `ncr_numpy` are managed as submodules of a monorepo, within
+which copying and integrity testing is automated.
 
 Related (ncr) projects
 ----------------------
