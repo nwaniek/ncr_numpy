@@ -252,9 +252,14 @@ a look at mature C++ math libraries such as
 a variety of projects. Essentially, `ncr_core` contains basic definitions,
 algorithms, and data structures. It does not change much, and development of it
 happens within its own repository. The files shipped with `ncr_numpy` are simply
-copied from that other repository.
-Both `ncr_core` and `ncr_numpy` are managed as submodules of a monorepo, within
-which copying and integrity testing is automated.
+copied from that other repository. While this contains slightly more than what
+`ncr_numpy` actually uses, this makes deployment and development easier, and
+also makes `ncr_numpy` fully self contained. Consequently, a user doesn't need
+to checkout another submodule or copy other files around that what is already
+available in `ncr_numpy`. It also allows to use several other `ncr_*` libraries,
+because the files are synchronized. Finally, both `ncr_core` and `ncr_numpy` are
+managed as submodules of a monorepo, within which copying and integrity testing
+is automated.
 
 Related (ncr) projects
 ----------------------
