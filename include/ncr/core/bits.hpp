@@ -10,7 +10,6 @@
 #include <bit>
 #include "types.hpp"
 
-
 // figure out if there are builtins or system functions available for byte
 // swapping.
 //
@@ -176,6 +175,139 @@ std::complex<f64> bswap<std::complex<f64>>(std::complex<f64> val)
 	u64 ureal = bswap<u64>(std::bit_cast<u64, f64>(real(val)));
 	u64 uimag = bswap<u64>(std::bit_cast<u64, f64>(imag(val)));
 	return std::complex<f64>(std::bit_cast<f64, u64>(ureal), std::bit_cast<f64, u64>(uimag));
+}
+
+
+/*
+ * flag_is_set - test if a flag is set in an unsigned value.
+ *
+ * This function evaluates if a certain flag, i.e. bit pattern, is present in v.
+ */
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline bool
+flag_is_set(const T v, const U flag)
+{
+	return (v & flag) == flag;
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+set_flag(const T v, const U flag)
+{
+	return v | flag;
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+clear_flag(const T v, const U flag)
+{
+	return v & ~flag;
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+toggle_flag(const T v, const U flag)
+{
+	return v ^ flag;
+}
+
+
+/*
+ * bitmask - create bitmask of given length at offset
+ */
+template <typename U>
+requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+constexpr U
+bitmask(U offset, U length)
+{
+	// casting -1 to unsigned produces a value with 1s everywhere (i.e.
+	// 0xFFF...F)
+	return ~(U(-1) << length) << offset;
+}
+
+
+template <typename U>
+requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+inline U
+set_bits(U dest, U offset, U length, U bits)
+{
+	U mask = bitmask<U>(offset, length);
+	return (dest & ~mask) | ((bits << offset) & mask);
+}
+
+
+template <typename U>
+requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+inline U
+get_bits(U src, U offset, U length)
+{
+	return (src & bitmask<U>(offset, length)) >> offset;
+}
+
+
+template <typename U>
+requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+inline U
+toggle_bits(U src, U offset, U length)
+{
+	U mask = bitmask<U>(offset, length);
+	return src ^ mask;
+}
+
+
+/*
+ * bit_is_set - test if the Nth bit is set in a variable, where N starts at 0
+ *
+ * This function evaluates if the Nth bit is present in variable v.
+ */
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline bool
+bit_is_set(const T v, const U N)
+{
+	return (v & 1 << N) > 0;
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+set_bit(const T v, const U N)
+{
+	return v | (1 << N);
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+clear_bit(const T v, const U N)
+{
+	return v & ~(1 << N);
+}
+
+
+template <typename T, typename U>
+requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
+		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+inline T
+toggle_bit(const T v, const U N)
+{
+	return v ^ (1 << N);
 }
 
 }
