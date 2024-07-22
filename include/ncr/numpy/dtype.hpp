@@ -24,12 +24,13 @@ namespace ncr { namespace numpy {
  * filled in. Note also that structured arrays can have types with arbitrarily
  * deep nesting of sub-structures. To determine if a (sub-)dtype is a structured
  * array, you can query is_structured_array(), which simply tests if there are
- * fields within this dtype.
+ * fields within this particular dtype.
  *
- * Note that fields in a dtype which are leaves, i.e. are basic types, will
- * return false for is_structured_array.
+ * Note, however, that nested fields themselves are dtypes. That means that
+ * fields which are leaves of a structured array, and therefore basic types,
+ * will return false in a call to is_structured_array.
  *
- * Note that structured arrays might contain types with mixed endianness.
+ * Furet note that structured arrays might contain types with mixed endianness.
  */
 struct dtype
 {
