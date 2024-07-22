@@ -30,14 +30,15 @@ namespace ncr { namespace numpy {
  * fields which are leaves of a structured array, and therefore basic types,
  * will return false in a call to is_structured_array.
  *
- * Furet note that structured arrays might contain types with mixed endianness.
+ * Further note that structured arrays might contain types with mixed
+ * endianness.
  */
 struct dtype
 {
 	// name of the field in case of strutured arrays. for basic types this is
 	// empty.
 	std::string
-		name       = "";
+		name = "";
 
 	// byte order of the data
 	byte_order
@@ -45,30 +46,30 @@ struct dtype
 
 	// single character type code (see table at start of this file)
 	u8
-		type_code  = 0;
+		type_code = 0;
 
 	// size of the data in bytes, e.g. bytes of an integer or characters in a
 	// unicode string
 	u32
-		size       = 0;
+		size = 0;
 
 	// size of an item in bytes in this dtype (e.g. U16 is a 16-character
 	// unicode string, each character using 4 bytes.  hence, item_size = 64
 	// bytes).
 	u64
-		item_size  = 0;
+		item_size = 0;
 
 	// offset of the field if this is a field in a structured array, otherwise
 	// this will be (most likely) 0
 	u64
-		offset     = 0;
+		offset = 0;
 
 	// numpy's shape has python 'int', which is commonly a 64bit integer. see
 	// python's sys.maxsize to get the maximum value, log(sys.maxsize,2)+1 will
 	// tell the number of bits used on a machine. Here, we simply assume that
 	// a u64 is enough.
 	std::vector<u64>
-		shape      = {};
+		shape = {};
 
 	// structured arrays will contain fields, which are themselves dtypes.
 	//
@@ -76,8 +77,11 @@ struct dtype
 	// order. We could also use a map instead, but then we would have to make
 	// sure that we somehow store the insert order.
 	std::vector<dtype>
-		fields     = {};
+		fields = {};
 
+	// map field names to indexes. while small structured arrays won't
+	// necessarily benefit from this, larger structured arrays might gain some
+	// speedup in getting values from fields.
 	std::unordered_map<std::string, size_t>
 		field_indexes  = {};
 };
