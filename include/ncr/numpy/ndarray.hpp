@@ -34,7 +34,6 @@
 
 #include "core.hpp"
 #include "dtype.hpp"
-#include "declarations.hpp"
 
 namespace ncr { namespace numpy {
 
@@ -44,9 +43,6 @@ namespace ncr { namespace numpy {
  */
 struct ndarray_item;
 struct ndarray;
-
-// explicit test to check if this is a structured array
-template <typename T> bool is_structured_array(const T&);
 
 
 /*
@@ -635,9 +631,8 @@ private:
 };
 
 
-template <>
 inline bool
-is_structured_array<ndarray>(const ndarray &arr)
+is_structured_array(const ndarray &arr)
 {
 	return !arr.dtype().fields.empty();
 }

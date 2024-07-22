@@ -10,9 +10,7 @@
 #pragma once
 
 #include <ncr/core/types.hpp>
-
 #include "core.hpp"
-#include "declarations.hpp"
 
 namespace ncr { namespace numpy {
 
@@ -70,16 +68,18 @@ struct dtype
 	std::vector<u64>
 		shape      = {};
 
-	// structured arrays will contain fields, which are themselves dtypes
+	// structured arrays will contain fields, which are themselves dtypes.
+	//
+	// Note: We store them in a vector because we need to retain the insert
+	// order. We could also use a map instead, but then we would have to make
+	// sure that we somehow store the insert order.
 	std::vector<dtype>
 		fields     = {};
 };
 
 
-
-template <>
 inline bool
-is_structured_array<dtype>(const dtype &dtype)
+is_structured_array(const dtype &dtype)
 {
 	return !dtype.fields.empty();
 }
