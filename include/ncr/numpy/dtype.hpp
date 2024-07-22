@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <unordered_map>
 #include <ncr/core/types.hpp>
 #include "core.hpp"
 
@@ -75,41 +77,84 @@ struct dtype
 	// sure that we somehow store the insert order.
 	std::vector<dtype>
 		fields     = {};
+
+	std::unordered_map<std::string, size_t>
+		field_indexes  = {};
 };
 
 
 inline bool
-is_structured_array(const dtype &dtype)
+is_structured_array(const dtype &dt)
 {
-	return !dtype.fields.empty();
+	return !dt.fields.empty();
 }
 
 
 inline
 const dtype*
-find_field(const dtype &current_dtype, const std::string& field_name)
+find_field(const dtype &dt, const std::string& field_name)
 {
-	for (const auto &field: current_dtype.fields) {
-		if (field.name == field_name) {
-			return &field;
-		}
-	}
-	return nullptr;
+	auto it = dt.field_indexes.find(field_name);
+	if (it == dt.field_indexes.end())
+		return nullptr;
+	return &dt.fields[it->second];
 }
 
 
 template <typename First, typename... Rest>
 const dtype*
-get_nested_dtype(const dtype &current_dtype, const First& first, const Rest&... rest)
+get_nested_dtype(const dtype &dt, const First& first, const Rest&... rest)
 {
-	const dtype* next_dtype = find_field(current_dtype, first);
-	if (!next_dtype)
+	const dtype* next_dt = find_field(dt, first);
+	if (!next_dt)
 		return nullptr;
 
 	if constexpr (sizeof...(rest) == 0)
-		return next_dtype;
+		return next_dt;
 	else
-		return get_nested_dtype(*next_dtype, rest...);
+		return get_nested_dtype(*next_dt, rest...);
+}
+
+
+template <typename T>
+dtype&
+add_field(dtype &dt, T &&field)
+{
+	dt.fields.push_back(std::forward<T>(field));
+	dtype& result = dt.fields.back();
+	dt.field_indexes.insert({result.name, dt.fields.size() - 1});
+	return result;
+}
+
+
+template <typename Func>
+void
+for_each_field(dtype &dt, Func &&func)
+{
+	std::for_each(dt.fields.begin(), dt.fields.end(), std::forward<Func>(func));
+}
+
+
+template <typename Func>
+void
+for_each_field(const dtype &dt, Func &&func)
+{
+	std::for_each(dt.fields.begin(), dt.fields.end(), std::forward<Func>(func));
+}
+
+
+template <typename Func>
+void
+for_each(std::vector<dtype> &fields, Func &&func)
+{
+	std::for_each(fields.begin(), fields.end(), std::forward<Func>(func));
+}
+
+template <typename Func>
+void
+for_each(const std::vector<dtype> &fields, Func &&func)
+{
+	std::for_each(fields.begin(), fields.end(), std::forward<Func>(func));
 }
 
 
@@ -132,18 +177,18 @@ inline dtype dtype_float64() { return {.type_code = 'f', .size=8, .item_size=8};
 //
 // forward declarations (required due to indirect recursion)
 //
-inline void serialize_dtype(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_descr(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_fields(std::ostream &s, const dtype &dtype);
-inline void serialize_dtype_typestr(std::ostream &s, const dtype &dtype);
+inline void serialize_dtype(std::ostream &s, const dtype &dt);
+inline void serialize_dtype_descr(std::ostream &s, const dtype &dt);
+inline void serialize_dtype_fields(std::ostream &s, const dtype &dt);
+inline void serialize_dtype_typestr(std::ostream &s, const dtype &dt);
 inline void serialize_fortran_order(std::ostream &s, storage_order o);
-inline void serialize_shape(std::ostream &s, const dtype &dtype);
+inline void serialize_shape(std::ostream &s, const u64_vector &shape);
 
 
 inline void
-serialize_dtype_typestr(std::ostream &s, const dtype &dtype)
+serialize_dtype_typestr(std::ostream &s, const dtype &dt)
 {
-	s << "'" << to_char(dtype.endianness) << dtype.type_code << dtype.size << "'";
+	s << "'" << to_char(dt.endianness) << dt.type_code << dt.size << "'";
 }
 
 
@@ -158,11 +203,11 @@ serialize_shape(std::ostream &s, const u64_vector &shape)
 
 
 inline void
-serialize_dtype_fields(std::ostream &s, const dtype &dtype)
+serialize_dtype_fields(std::ostream &s, const dtype &dt)
 {
 	s << "[";
 	size_t i = 0;
-	for (auto &f: dtype.fields) {
+	for (auto &f: dt.fields) {
 		if (i++ > 0) s << ", ";
 		serialize_dtype(s, f);
 	}
@@ -171,16 +216,16 @@ serialize_dtype_fields(std::ostream &s, const dtype &dtype)
 
 
 inline void
-serialize_dtype(std::ostream &s, const dtype &dtype)
+serialize_dtype(std::ostream &s, const dtype &dt)
 {
-	s << "('" << dtype.name << "', ";
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
+	s << "('" << dt.name << "', ";
+	if (is_structured_array(dt))
+		serialize_dtype_fields(s, dt);
 	else {
-		serialize_dtype_typestr(s, dtype);
-		if (dtype.shape.size() > 0) {
+		serialize_dtype_typestr(s, dt);
+		if (dt.shape.size() > 0) {
 			s << ", ";
-			serialize_shape(s, dtype.shape);
+			serialize_shape(s, dt.shape);
 		}
 	}
 	s << ")";
@@ -188,13 +233,13 @@ serialize_dtype(std::ostream &s, const dtype &dtype)
 
 
 inline void
-serialize_dtype_descr(std::ostream &s, const dtype &dtype)
+serialize_dtype_descr(std::ostream &s, const dtype &dt)
 {
 	s << "'descr': ";
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
+	if (is_structured_array(dt))
+		serialize_dtype_fields(s, dt);
 	else
-		serialize_dtype_typestr(s, dtype);
+		serialize_dtype_typestr(s, dt);
 }
 
 inline void
@@ -208,13 +253,13 @@ serialize_fortran_order(std::ostream &s, storage_order o)
  * operator<< - pretty print a dtype
  */
 inline std::ostream&
-operator<< (std::ostream &os, const dtype &dtype)
+operator<< (std::ostream &os, const dtype &dt)
 {
 	std::ostringstream s;
-	if (is_structured_array(dtype))
-		serialize_dtype_fields(s, dtype);
+	if (is_structured_array(dt))
+		serialize_dtype_fields(s, dt);
 	else
-		serialize_dtype_typestr(s, dtype);
+		serialize_dtype_typestr(s, dt);
 	os << s.str();
 	return os;
 }

@@ -464,15 +464,15 @@ operator<< (std::ostream &os, const year_gdp_record_t &record)
 void
 inspect_dtype(const numpy::dtype &dtype, std::string indent = "")
 {
-	for (const auto &field_dtype: dtype.fields) {
-		std::cout << indent << field_dtype.name
-			      << ": offset = " << field_dtype.offset
-			      << ", item_size = " << field_dtype.item_size
-			      << ", end = " << (field_dtype.offset + field_dtype.item_size)
+	for_each(dtype.fields, [=](const numpy::dtype &field) {
+		std::cout << indent << field.name
+			      << ": offset = " << field.offset
+			      << ", item_size = " << field.item_size
+			      << ", end = " << (field.offset + field.item_size)
 			      << "\n";
-		if (is_structured_array(field_dtype))
-			inspect_dtype(field_dtype, indent + "  ");
-	}
+		if (is_structured_array(field))
+			inspect_dtype(field, indent + "  ");
+	});
 }
 
 

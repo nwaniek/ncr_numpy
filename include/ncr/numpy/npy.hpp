@@ -520,7 +520,7 @@ validate_header(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
 
 
 inline result
-parse_descr_string(pyparser::parse_result *descr, dtype &dtype)
+parse_descr_string(pyparser::parse_result *descr, dtype &dt)
 {
 	// sanity check: test if the data type is actually a string or not
 	if (descr->dtype != pyparser::type::string)
@@ -531,17 +531,17 @@ parse_descr_string(pyparser::parse_result *descr, dtype &dtype)
 		return result::error_descr_invalid_string;
 
 	// first character is the byte order
-	dtype.endianness = to_byte_order(range[0]);
+	dt.endianness = to_byte_order(range[0]);
 	// second character is the type code
-	dtype.type_code  = range[1];
+	dt.type_code  = range[1];
 	// remaining characters are the byte size of the data type
 	std::string str(range.begin() + 2, range.end());
 
 	// TODO: use something else than strtol
 	char *end;
-	dtype.size = std::strtol(str.c_str(), &end, 10);
+	dt.size = std::strtol(str.c_str(), &end, 10);
 	if (*end != '\0') {
-		dtype.size = 0;
+		dt.size = 0;
 		return result::error_descr_invalid_data_size;
 	}
 	return result::ok;
@@ -549,7 +549,7 @@ parse_descr_string(pyparser::parse_result *descr, dtype &dtype)
 
 
 inline result
-parse_descr_list(pyparser::parse_result *descr, dtype &dtype)
+parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 {
 	// the descr field of structured arrays is a list of tuples (n, t, s), where
 	// n is the name of the field, t is the type, s is the shape. Note that the
@@ -573,8 +573,9 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dtype)
 			return result::error_descr_list_invalid_value;
 
 		// first field: name
-		dtype.fields.push_back({.name = std::string(node->nodes[0]->begin, node->nodes[0]->end)});
-		auto &field = dtype.fields.back();
+		auto &field = add_field(dt, dtype{.name = std::string(node->nodes[0]->begin, node->nodes[0]->end)});
+		// dt.fields.push_back({.name = std::string(node->nodes[0]->begin, node->nodes[0]->end)});
+		// auto &field = dt.fields.back();
 
 		// second field: type description, which is either a string, or in case
 		// of sub-structures it is again a list of tuples, which we can parse
@@ -618,21 +619,21 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dtype)
 
 
 inline result
-parse_descr(pyparser::parse_result *descr, dtype &dtype)
+parse_descr(pyparser::parse_result *descr, dtype &dt)
 {
 	if (!descr)
 		return result::error_descr_invalid;
 
 	switch (descr->dtype) {
-		case pyparser::type::string: return parse_descr_string(descr, dtype);
-		case pyparser::type::list:   return parse_descr_list(descr, dtype);
+		case pyparser::type::string: return parse_descr_string(descr, dt);
+		case pyparser::type::list:   return parse_descr_list(descr, dt);
 		default:                     return result::error_descr_invalid_type;
 	}
 }
 
 
 inline result
-parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &shape)
+parse_header(npyfile &finfo, dtype &dt, storage_order &order, u64_vector &shape)
 {
 	// the header of a numpy file is an ASCII-string terminated by \n and padded
 	// with 0x20 (whitespace), i.e. string\x20\x20\x20...\n, where string is a
@@ -684,7 +685,7 @@ parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &sha
 
 		// descr, might be a string or a list of tuples
 		if (equals(kv->nodes[0]->range(), "descr")) {
-			auto tmp = parse_descr(kv->nodes[1].get(), dtype);
+			auto tmp = parse_descr(kv->nodes[1].get(), dt);
 			if (tmp != result::ok)
 				return tmp;
 			res &= ~result::warning_missing_descr;
@@ -721,12 +722,12 @@ parse_header(npyfile &finfo, dtype &dtype, storage_order &order, u64_vector &sha
 
 
 inline result
-compute_item_size(dtype &dtype, u64 offset = 0)
+compute_item_size(dtype &dt, u64 offset = 0)
 {
-	dtype.offset = offset;
+	dt.offset = offset;
 
 	// for simple arrays, we simple report the item size
-	if (!is_structured_array(dtype)) {
+	if (!is_structured_array(dt)) {
 		// most types have their 'width' in bytes given directly in the
 		// descr string, which is already stored in dtype.size. However, unicode
 		// strings and objects differ in that the size that is given in the
@@ -734,43 +735,43 @@ compute_item_size(dtype &dtype, u64 offset = 0)
 		// of unicude, U16 means a unicode string with 16 unicode characters,
 		// each character taking up 4 bytes.
 		u64 multiplier;
-		switch (dtype.type_code) {
+		switch (dt.type_code) {
 			case 'O': multiplier = 8; break;
 			case 'U': multiplier = 4; break;
 			default:  multiplier = 1;
 		}
-		dtype.item_size = multiplier * dtype.size;
+		dt.item_size = multiplier * dt.size;
 
 		// if there's a shape attached, multiply it in
-		for (auto s: dtype.shape)
-			dtype.item_size *= s;
+		for (auto s: dt.shape)
+			dt.item_size *= s;
 	}
 	else {
 		// the item_size for structured arrays is (often) 0, in which case we simply
 		// update. If the item_size is not 0, double check to determine if there is
 		// an item-size mismatch.
 		u64 subsize = 0;
-		for (auto &field: dtype.fields) {
+		for (auto &field: dt.fields) {
 			result res;
-			if ((res = compute_item_size(field, dtype.offset + subsize)) != result::ok)
+			if ((res = compute_item_size(field, dt.offset + subsize)) != result::ok)
 				return res;
 			subsize += field.item_size;
 		}
-		if (dtype.item_size != 0 && dtype.item_size != subsize)
+		if (dt.item_size != 0 && dt.item_size != subsize)
 			return result::error_item_size_mismatch;
-		dtype.item_size = subsize;
+		dt.item_size = subsize;
 	}
 	return result::ok;
 }
 
 
 inline result
-validate_data_size(const npyfile &finfo, const dtype &dtype, u64 &size)
+validate_data_size(const npyfile &finfo, const dtype &dt, u64 &size)
 {
 	// detect if data is truncated
-	if (finfo.data_size % dtype.item_size != 0)
+	if (finfo.data_size % dt.item_size != 0)
 		return result::error_data_size_mismatch;
-	size = finfo.data_size / dtype.item_size;
+	size = finfo.data_size / dt.item_size;
 	return result::ok;
 }
 
@@ -808,7 +809,7 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	npy.streaming = false;
 
 	// parts of the array description (will be moved into the array later)
-	dtype         dtype;
+	dtype         dt;
 	u64_vector    shape;
 	storage_order order;
 	u64           size;
@@ -820,15 +821,15 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	if ((res |= validate_header_length(buf, bufpos, npy), is_error(res))) return res;
 	if ((res |= validate_header(buf, bufpos, npy)       , is_error(res))) return res;
 	if ((res |= compute_data_size(buf, bufpos, npy)     , is_error(res))) return res;
-	if ((res |= parse_header(npy, dtype, order, shape)  , is_error(res))) return res;
-	if ((res |= compute_item_size(dtype)                , is_error(res))) return res;
-	if ((res |= validate_data_size(npy, dtype, size)    , is_error(res))) return res;
+	if ((res |= parse_header(npy, dt, order, shape)     , is_error(res))) return res;
+	if ((res |= compute_item_size(dt)                   , is_error(res))) return res;
+	if ((res |= validate_data_size(npy, dt, size)       , is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
 	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
 
 	// build the ndarray from the data that we read by moving into it
-	array.assign(std::move(dtype), std::move(shape), std::move(buf), order);
+	array.assign(std::move(dt), std::move(shape), std::move(buf), order);
 
 	return res;
 }
