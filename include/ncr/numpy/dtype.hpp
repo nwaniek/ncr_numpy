@@ -120,11 +120,11 @@ get_nested_dtype(const dtype &dt, const First& first, const Rest&... rest)
 }
 
 
-template <typename T>
+template <typename T, typename = std::enable_if_t<std::is_same_v<std::decay_t<T>, dtype>>>
 dtype&
 add_field(dtype &dt, T &&field)
 {
-	dt.fields.push_back(std::forward<T>(field));
+	dt.fields.emplace_back(std::forward<T>(field));
 	dtype& result = dt.fields.back();
 	dt.field_indexes.insert({result.name, dt.fields.size() - 1});
 	return result;
