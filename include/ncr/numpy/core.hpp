@@ -89,21 +89,25 @@ operator<<(std::ostream &os, const storage_order order)
 
 template <typename T = size_t>
 std::vector<T>
-unravel_index(int index, const std::vector<T>& shape, storage_order order)
+unravel_index(T index, const std::vector<T>& shape, storage_order order)
 {
-	int n = shape.size();
-	std::vector<int> indices(n);
+	size_t n = shape.size();
+	std::vector<T> indices(n);
 
 	switch (order) {
 	case storage_order::row_major:
-		for (int i = n - 1; i >= 0; --i) {
-			indices[i] = index % shape[i];
-			index /= shape[i];
+		{
+			size_t i = n;
+			while (i > 0) {
+				--i;
+				indices[i] = static_cast<T>(index % shape[i]);
+				index /= shape[i];
+			}
 		}
 		break;
 
 	case storage_order::col_major:
-		for (int i = 0; i < n; ++i) {
+		for (size_t i = 0; i < n; ++i) {
 			indices[i] = index % shape[i];
 			index /= shape[i];
 		}
@@ -126,7 +130,7 @@ unravel_index_strided(size_t offset, const std::vector<T> &strides, storage_orde
 			size_t currentStride = strides[i];
 			size_t currentIndex = offset / currentStride;
 			offset %= currentStride;
-			indices[i] = currentIndex;
+			indices[i] = static_cast<T>(currentIndex);
 		}
 		break;
 
@@ -135,7 +139,7 @@ unravel_index_strided(size_t offset, const std::vector<T> &strides, storage_orde
 			size_t currentStride = strides[i];
 			size_t currentIndex = offset / currentStride;
 			offset %= currentStride;
-			indices[i] = currentIndex;
+			indices[i] = static_cast<T>(currentIndex);
 		}
 		break;
 	}

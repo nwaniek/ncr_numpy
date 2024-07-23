@@ -25,12 +25,11 @@
 
 #include <cassert>
 #include <functional>
-#include <iomanip>
-#include <iostream>
 
 #include <ncr/core/types.hpp>
 #include <ncr/core/bits.hpp>
 #include <ncr/core/unicode.hpp>
+#include <ncr/core/type_operators.hpp>
 
 #include "core.hpp"
 #include "dtype.hpp"
@@ -67,8 +66,8 @@ struct ndarray;
 struct ndarray_item
 {
 	ndarray_item() = delete;
-	ndarray_item(u8_subrange &&_ra, struct dtype &_dt) : _r(_ra), _dtype(_dt) {}
-	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dtype) : _r(u8_subrange(begin, end)), _dtype(dtype) {}
+	ndarray_item(u8_subrange &&_ra, struct dtype &_dt, u64_vector _idx) : _r(_ra), _dtype(_dt), _index(_idx) {}
+	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt, u64_vector _idx) : _r(u8_subrange(begin, end)), _dtype(dt), _index(_idx) {}
 
 
 	template <typename T>
@@ -111,6 +110,11 @@ struct ndarray_item
 		return _dtype;
 	}
 
+	inline
+	const u64_vector&
+	index() const {
+		return _index;
+	}
 
 	template <typename T, typename... Args>
 	static
@@ -127,10 +131,16 @@ struct ndarray_item
 
 private:
 	// the data subrange within the ndarray
-	const u8_subrange _r;
+	const u8_subrange
+		_r;
 
 	// the data type of the item (equal to the data type of its ndarray)
-	const struct dtype &_dtype;
+	const struct dtype &
+		_dtype;
+
+	// index of this item
+	const u64_vector
+		_index;
 };
 
 
@@ -138,10 +148,10 @@ template <typename T, typename = void>
 struct field_extractor
 {
 	static const T
-	get_field(const ndarray_item &item, const dtype& dtype)
+	get_field(const ndarray_item &item, const dtype& dt)
 	{
 		// TODO: bounds checking
-		return *reinterpret_cast<const T*>(item.data() + dtype.offset);
+		return *reinterpret_cast<const T*>(item.data() + dt.offset);
 	}
 };
 
@@ -150,11 +160,11 @@ template <typename T>
 struct field_extractor<T, std::enable_if_t<is_ucs4string<T>::value>>
 {
 	static const T
-	get_field(const ndarray_item &item, const dtype& dtype)
+	get_field(const ndarray_item &item, const dtype& dt)
 	{
 		// TODO: bounds checking
 		constexpr auto N = ucs4string_size<T>::value;
-		return to_ucs4<N>(*reinterpret_cast<const std::array<u32, N>*>(item.data() + dtype.offset));
+		return to_ucs4<N>(*reinterpret_cast<const std::array<u32, N>*>(item.data() + dt.offset));
 	}
 };
 
@@ -163,10 +173,10 @@ template <typename T, typename... Args>
 const T
 ndarray_item::field(const ndarray_item &item, Args&&... args)
 {
-	const struct dtype *dtype = get_nested_dtype(item.dtype(), args...);
-	if (!dtype)
+	const struct dtype *dt = get_nested_dtype(item.dtype(), args...);
+	if (!dt)
 		throw std::runtime_error("Field not found: " + (... + ('/' + std::string(args))));
-	return field_extractor<T>::get_field(item, *dtype);
+	return field_extractor<T>::get_field(item, *dt);
 }
 
 
@@ -186,9 +196,9 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(std::initializer_list<u64> shape,
-	        struct dtype dtype = dtype_float64(),
+	        struct dtype dt = dtype_float64(),
 	        storage_order o = storage_order::row_major)
-	: _dtype(dtype), _shape{shape}, _size(0), _order(o)
+	: _dtype(dt), _shape{shape}, _size(0), _order(o)
 	{
 		_compute_size();
 		_resize();
@@ -198,9 +208,9 @@ struct ndarray
 
 	// TODO: default data type
 	ndarray(u64_vector shape,
-	        struct dtype dtype = dtype_float64(),
+	        struct dtype dt = dtype_float64(),
 	        storage_order o = storage_order::row_major)
-	: _dtype(dtype), _shape(shape), _size(0), _order(o)
+	: _dtype(dt), _shape(shape), _size(0), _order(o)
 	{
 		_compute_size();
 		_resize();
@@ -208,11 +218,11 @@ struct ndarray
 	}
 
 
-	ndarray(struct dtype &&dtype,
+	ndarray(struct dtype &&dt,
 	        u64_vector &&shape,
 	        u8_vector &&buffer,
 	        storage_order o = storage_order::row_major)
-	: _dtype(std::move(dtype)) , _shape(std::move(shape)) , _order(o), _data(std::move(buffer))
+	: _dtype(std::move(dt)) , _shape(std::move(shape)) , _order(o), _data(std::move(buffer))
 	{
 		_compute_size();
 		_compute_strides();
@@ -225,7 +235,7 @@ struct ndarray
 	 * Note that this will clear all available data beforehand
 	 */
 	void
-	assign(dtype &&dtype,
+	assign(dtype &&dt,
 	       u64_vector &&shape,
 	       u8_vector &&buffer,
 	       storage_order o = storage_order::row_major)
@@ -235,7 +245,7 @@ struct ndarray
 		_data.clear();
 
 		// assign values
-		_dtype = std::move(dtype);
+		_dtype = std::move(dt);
 		_shape = std::move(shape);
 		_order = o;
 		_data  = std::move(buffer);
@@ -249,11 +259,11 @@ struct ndarray
 	/*
 	 * unravel - unravel a given index for this particular array
 	 */
-	template <typename T>
-	std::vector<T>
-	unravel(int index)
+	template <typename T = size_t>
+	u64_vector
+	unravel(size_t index)
 	{
-		return unravel_index(index, _shape, _order);
+		return unravel_index<u64>(index, _shape, _order);
 	}
 
 
@@ -329,7 +339,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(Indexes... index)
 	{
-		return ndarray_item(this->get(index...), _dtype);
+		return ndarray_item(this->get(index...), _dtype, {index...});
 	}
 
 
@@ -342,7 +352,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(u64_vector indexes)
 	{
-		return ndarray_item(this->get(indexes), _dtype);
+		return ndarray_item(this->get(indexes), _dtype, indexes);
 	}
 
 
@@ -462,7 +472,7 @@ struct ndarray
 
 
 	// TODO: give each ndarray_item its index
-	template <typename Func = std::function<void (size_t, const ndarray_item&, const dtype)>>
+	template <typename Func = std::function<void (const ndarray_item&)>>
 	inline void
 	map(Func func)
 	{
@@ -470,7 +480,8 @@ struct ndarray
 			func(ndarray_item(
 					u8_subrange(_data.begin() + _dtype.item_size * i,
 								_data.begin() + _dtype.item_size * (i + 1)),
-					_dtype));
+					_dtype,
+					this->unravel<u64>(i)));
 		}
 	}
 
@@ -665,129 +676,6 @@ struct ndarray_t : ndarray
 		return *reinterpret_cast<T*>(range.data());
 	}
 };
-
-
-/*
- * print_tensor - print an ndarray to an ostream
- *
- * Explicit interface, commonly a user does not need to use this function
- * directly
- */
-template <typename T, typename Func = std::function<T (T)>>
-void
-print_tensor(std::ostream &os, ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Func transform)
-{
-	auto shape = arr.shape();
-	auto len   = shape.size();
-
-	if (len == 0) {
-		os << "[]";
-		return;
-	}
-
-	if (dim == len - 1) {
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			if (i > 0)
-				os << ", ";
-			os << std::setw(2) << transform(arr.value<T>(indexes));
-		}
-		os << "]";
-	}
-	else {
-		if (dim == 0)
-			os << indent;
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			// indent
-			if (i > 0)
-				os << indent << std::setw(dim+1) << "";
-			print_tensor<T>(os, arr, indent, indexes, dim+1, transform);
-			if (shape[dim] > 1) {
-				if (i < shape[dim] - 1)
-					os << ",\n";
-			}
-		}
-		os << "]";
-	}
-}
-
-
-/*
- * print_tensor - print an ndarray to an ostream
- */
-template <typename T, typename Func = std::function<T (T)>>
-void
-print_tensor(ndarray &arr, std::string indent="", Func transform = [](T v){ return v; }, std::ostream &os = std::cout)
-{
-	auto shape = arr.shape();
-	auto dims  = shape.size();
-	u64_vector indexes(dims);
-	print_tensor<T>(os, arr, indent, indexes, 0, transform);
-}
-
-
-/*
- * print_tensor - print an ndarray to an ostream
- *
- * Explicit interface, commonly a user does not need to use this function
- * directly
- */
-template <typename T>
-void
-print_tensor(std::ostream &os, ndarray_t<T> &arr, std::string indent, u64_vector &indexes, size_t dim)
-{
-	auto shape = arr.shape();
-	auto len   = shape.size();
-
-	if (len == 0) {
-		os << "[]";
-		return;
-	}
-
-	if (dim == len - 1) {
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			if (i > 0)
-				os << ", ";
-			os << std::setw(2) << arr(indexes);
-		}
-		os << "]";
-	}
-	else {
-		if (dim == 0)
-			os << indent;
-		os << "[";
-		for (size_t i = 0; i < shape[dim]; i++) {
-			indexes[dim] = i;
-			// indent
-			if (i > 0)
-				os << indent << std::setw(dim+1) << "";
-			print_tensor(os, arr, indent, indexes, dim+1);
-			if (shape[dim] > 1) {
-				if (i < shape[dim] - 1)
-					os << ",\n";
-			}
-		}
-		os << "]";
-	}
-}
-
-
-/*
- * print_tensor - print an ndarray to an ostream
- */
-template <typename T>
-void print_tensor(ndarray_t<T> &arr, std::string indent="")
-{
-	auto shape = arr.shape();
-	auto dims  = shape.size();
-	u64_vector indexes(dims);
-	print_tensor(std::cout, arr, indent, indexes, 0);
-}
 
 
 }} // ncr

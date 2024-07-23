@@ -543,7 +543,7 @@ example_nested()
 	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
 	arr.map([](const numpy::ndarray_item &item) {
 			auto &record = item.as<year_gdp_record_packed_t>();
-			std::cout << "  " << record.year << "\n";
+			std::cout << "  " << record.year << " (item index: " << item.index() << ")\n";
 			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";

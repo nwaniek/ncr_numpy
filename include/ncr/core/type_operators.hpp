@@ -9,13 +9,15 @@
 #pragma once
 
 #include <iostream>
-#include "types.hpp"
+#include <vector>
+#include <ranges>
 
 
 namespace ncr {
 
+template <typename T>
 inline std::ostream&
-operator<<(std::ostream &os, const u8_const_subrange &range)
+operator<<(std::ostream &os, const std::ranges::subrange<T> &range)
 {
 	for (auto it = range.begin(); it != range.end(); ++it)
 		os << (*it);
@@ -23,8 +25,9 @@ operator<<(std::ostream &os, const u8_const_subrange &range)
 }
 
 
+template <typename T>
 inline std::ostream&
-operator<<(std::ostream &os, const u8_vector &vec)
+operator<<(std::ostream &os, const std::vector<T> &vec)
 {
 	for (auto it = vec.begin(); it != vec.end(); ++it)
 		os << (*it);
