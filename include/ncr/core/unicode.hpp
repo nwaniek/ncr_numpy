@@ -72,6 +72,13 @@ struct ucs4string_size : std::integral_constant<u64, 0> {};
 template <size_t N>
 struct ucs4string_size<ucs4string<N>>: std::integral_constant<u64, N> {};
 
+template <typename T>
+struct ucs4string_bytesize : std::integral_constant<u64, 0> {};
+
+template <size_t N>
+struct ucs4string_bytesize<ucs4string<N>>: std::integral_constant<u64, N * 4> {};
+
+
 
 template <size_t N = 0>
 ucs4string<N>
