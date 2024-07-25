@@ -9,22 +9,31 @@
 #pragma once
 
 #include <iostream>
-#include "types.hpp"
-
+#include <cstdint>
+#include <vector>
 
 namespace ncr {
 
+
+template <typename T>
 inline std::ostream&
-operator<<(std::ostream &os, const u8_const_subrange &range)
+operator<<(std::ostream &os, const std::ranges::subrange<T> &range)
 {
-	for (auto it = range.begin(); it != range.end(); ++it)
-		os << (*it);
+	for (const auto &elem: range) {
+		if constexpr (std::is_same_v<typename T::value_type, uint8_t>) {
+			os << static_cast<int>(elem) << " ";
+		}
+		else {
+			os << elem << " ";
+		}
+	}
 	return os;
 }
 
 
+template <typename T>
 inline std::ostream&
-operator<<(std::ostream &os, const u8_vector &vec)
+operator<<(std::ostream &os, const std::vector<T> &vec)
 {
 	for (auto it = vec.begin(); it != vec.end(); ++it)
 		os << (*it);
