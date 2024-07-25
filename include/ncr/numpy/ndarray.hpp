@@ -123,7 +123,7 @@ struct ndarray_item
 
 	inline
 	size_t
-	size() const {
+	bytesize() const {
 		return _size;
 	}
 
@@ -275,7 +275,7 @@ struct ndarray
 	/*
 	 * assign - assign new data to this array
 	 *
-	 * Note that this will clear all available data beforehand
+	 * Note that this will clear all existing data beforehand
 	 */
 	void
 	assign(dtype &&dt,
@@ -594,28 +594,33 @@ struct ndarray
 	//
 	// property getters
 	//
-	const struct dtype& dtype() const { return _dtype; }
-	storage_order       order() const { return _order; }
-	const u64_vector&   shape() const { return _shape; }
-	const u8_vector&    data()  const { return _data;  }
-	size_t              size()  const { return _size;  }
+	const struct dtype& dtype()    const { return _dtype; }
+	storage_order       order()    const { return _order; }
+	const u64_vector&   shape()    const { return _shape; }
+	const u8_vector&    data()     const { return _data;  }
+	size_t              size()     const { return _size;  }
+	size_t              bytesize() const { return _data.size(); }
 
 private:
 	// _data stores the type information of the array
-	struct dtype        _dtype;
+	struct dtype
+		_dtype;
 
 	// _shape contains the shape of the array, meaning the size of each
 	// dimension. Example: a shape of [2,3] would mean an array of size 2x3,
 	// i.e. with 2 rows and 3 columns.
-	u64_vector    _shape;
+	u64_vector
+		_shape;
 
 	// _size contains the number of elements in the array
-	size_t        _size  = 0;
+	size_t
+		_size  = 0;
 
 	// storage order used in this array. by default this corresponds to
 	// row_major (or 'C' order). Alternatively, this could be col_major (or
 	// 'Fortran' order).
-	storage_order _order = storage_order::row_major;
+	storage_order
+		_order = storage_order::row_major;
 
 	// _strides is the tuple (or vector) of elements in each dimension when
 	// traversing the array. Note that this differs from numpy's ndarray.strides
@@ -623,10 +628,12 @@ private:
 	// the bytes depend on _dtype.item_size, and will be usually multiplied in
 	// only after the number of elements to skip are determined. See get<> for
 	// an example
-	u64_vector    _strides;
+	u64_vector
+		_strides;
 
 	// _data contains the 'raw' data of the array
-	u8_vector     _data;
+	u8_vector
+		_data;
 
 
 	/*
