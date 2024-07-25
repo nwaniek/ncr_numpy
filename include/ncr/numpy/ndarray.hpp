@@ -66,8 +66,18 @@ struct ndarray;
 struct ndarray_item
 {
 	ndarray_item() = delete;
-	ndarray_item(u8_subrange &&_ra, struct dtype &_dt, u64_vector _idx) : _r(_ra), _dtype(_dt), _index(_idx) {}
-	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt, u64_vector _idx) : _r(u8_subrange(begin, end)), _dtype(dt), _index(_idx) {}
+
+	ndarray_item(u8_subrange &&_ra, struct dtype &_dt, u64_vector _idx)
+		: _r(_ra)
+		, _size(sizeof(_r))
+		, _dtype(_dt)
+		, _index(_idx) {}
+
+	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt, u64_vector _idx)
+		: _r(u8_subrange(begin, end))
+		, _size(sizeof(_r))
+		, _dtype(dt)
+		, _index(_idx) {}
 
 
 	template <typename T>
@@ -78,7 +88,7 @@ struct ndarray_item
 		if (_r.size() < sizeof(T)) {
 			std::ostringstream s;
 			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _r.size() << " bytes)";
-			throw std::length_error(s.str());
+			throw std::out_of_range(s.str());
 		}
 		return *reinterpret_cast<T*>(_r.data());
 	}
@@ -98,9 +108,23 @@ struct ndarray_item
 
 
 	inline
+	const u8_subrange
+	range() const {
+		return _r;
+	}
+
+
+	inline
 	const u8*
 	data() const {
 		return _r.data();
+	}
+
+
+	inline
+	size_t
+	size() const {
+		return _size;
 	}
 
 
@@ -110,11 +134,13 @@ struct ndarray_item
 		return _dtype;
 	}
 
+
 	inline
 	const u64_vector&
 	index() const {
 		return _index;
 	}
+
 
 	template <typename T, typename... Args>
 	static
@@ -134,6 +160,11 @@ private:
 	const u8_subrange
 		_r;
 
+	// the size of the subrange. this might be required frequently, so we store
+	// it once
+	const size_t
+		_size;
+
 	// the data type of the item (equal to the data type of its ndarray)
 	const struct dtype &
 		_dtype;
@@ -150,7 +181,12 @@ struct field_extractor
 	static const T
 	get_field(const ndarray_item &item, const dtype& dt)
 	{
-		// TODO: bounds checking
+		auto range_size = item.range().size();
+		if ((dt.offset + sizeof(T)) > range_size) {
+			std::ostringstream s;
+			s << "Target type size (" << sizeof(T) << " bytes) out of range (" << range_size << " bytes, offset " << dt.offset << " bytes)";
+			throw std::out_of_range(s.str());
+		}
 		return *reinterpret_cast<const T*>(item.data() + dt.offset);
 	}
 };
@@ -162,8 +198,15 @@ struct field_extractor<T, std::enable_if_t<is_ucs4string<T>::value>>
 	static const T
 	get_field(const ndarray_item &item, const dtype& dt)
 	{
-		// TODO: bounds checking
 		constexpr auto N = ucs4string_size<T>::value;
+		constexpr auto B = N * 4;
+		// constexpr auto B = ucs4string_bytesize<T>::value;
+		auto range_size = item.range().size();
+		if ((dt.offset + B) > range_size) {
+			std::ostringstream s;
+			s << "Target string size (" << B << " bytes) out of range (" << range_size << " bytes, offset " << dt.offset << " bytes)";
+			throw std::out_of_range(s.str());
+		}
 		return to_ucs4<N>(*reinterpret_cast<const std::array<u32, N>*>(item.data() + dt.offset));
 	}
 };
@@ -173,7 +216,7 @@ template <typename T, typename... Args>
 const T
 ndarray_item::field(const ndarray_item &item, Args&&... args)
 {
-	const struct dtype *dt = get_nested_dtype(item.dtype(), args...);
+	const struct dtype *dt = find_field_recursive(item.dtype(), args...);
 	if (!dt)
 		throw std::runtime_error("Field not found: " + (... + ('/' + std::string(args))));
 	return field_extractor<T>::get_field(item, *dt);
@@ -371,7 +414,7 @@ struct ndarray
 		if (_dtype.item_size < sizeof(T)) {
 			std::ostringstream s;
 			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
-			throw std::length_error(s.str());
+			throw std::out_of_range(s.str());
 		}
 
 		return *reinterpret_cast<T*>(this->get(index...).data());
@@ -397,7 +440,7 @@ struct ndarray
 		if (_dtype.item_size < sizeof(T)) {
 			std::ostringstream s;
 			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
-			throw std::length_error(s.str());
+			throw std::out_of_range(s.str());
 		}
 		return *reinterpret_cast<T*>(this->get(indexes).data());
 	}
@@ -493,7 +536,7 @@ struct ndarray
 		if (_dtype.item_size < sizeof(T)) {
 			std::ostringstream s;
 			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _dtype.item_size << " bytes)";
-			throw std::length_error(s.str());
+			throw std::out_of_range(s.str());
 		}
 
 		auto stride = sizeof(T);

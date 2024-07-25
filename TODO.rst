@@ -1,5 +1,7 @@
 To Do
 =====
+general: provide allocation-free interface wherever possible
+
 npy: load simple npy from non-seekable IO stream (TCP, named pipe)
 npy: load simple npz from non-seekable IO stream (TCP, named pipe)
 npy: support Eigen matrices / arrays

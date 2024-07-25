@@ -107,7 +107,7 @@ find_field(const dtype &dt, const std::string& field_name)
 
 template <typename First, typename... Rest>
 const dtype*
-get_nested_dtype(const dtype &dt, const First& first, const Rest&... rest)
+find_field_recursive(const dtype &dt, const First& first, const Rest&... rest)
 {
 	const dtype* next_dt = find_field(dt, first);
 	if (!next_dt)
@@ -116,7 +116,7 @@ get_nested_dtype(const dtype &dt, const First& first, const Rest&... rest)
 	if constexpr (sizeof...(rest) == 0)
 		return next_dt;
 	else
-		return get_nested_dtype(*next_dt, rest...);
+		return find_field_recursive(*next_dt, rest...);
 }
 
 
