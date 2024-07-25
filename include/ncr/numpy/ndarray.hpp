@@ -502,6 +502,14 @@ struct ndarray
 	}
 
 
+	/*
+	 * map - call a function for each element
+	 *
+	 * map calls a function for each item of the array, passing the item to the
+	 * function that is given to map. The provided function will also receive
+	 * the flat-index of the item, which can be used on the caller-side to get
+	 * the multi-index (via ndarray::unravel).
+	 */
 	template <typename Func = std::function<void (const ndarray_item&, size_t)>>
 	inline void
 	map(Func func)
