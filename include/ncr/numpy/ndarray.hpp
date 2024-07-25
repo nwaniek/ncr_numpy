@@ -199,8 +199,7 @@ struct field_extractor<T, std::enable_if_t<is_ucs4string<T>::value>>
 	get_field(const ndarray_item &item, const dtype& dt)
 	{
 		constexpr auto N = ucs4string_size<T>::value;
-		constexpr auto B = N * 4;
-		// constexpr auto B = ucs4string_bytesize<T>::value;
+		constexpr auto B = ucs4string_bytesize<T>::value;
 		auto range_size = item.range().size();
 		if ((dt.offset + B) > range_size) {
 			std::ostringstream s;
