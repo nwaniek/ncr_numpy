@@ -67,17 +67,17 @@ struct ndarray_item
 {
 	ndarray_item() = delete;
 
-	ndarray_item(u8_subrange &&_ra, struct dtype &_dt, u64_vector _idx)
+	ndarray_item(u8_subrange &&_ra, struct dtype &_dt)
 		: _r(_ra)
 		, _size(sizeof(_r))
 		, _dtype(_dt)
-		, _index(_idx) {}
+		{}
 
-	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt, u64_vector _idx)
+	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt)
 		: _r(u8_subrange(begin, end))
 		, _size(sizeof(_r))
 		, _dtype(dt)
-		, _index(_idx) {}
+		{}
 
 
 	template <typename T>
@@ -135,13 +135,6 @@ struct ndarray_item
 	}
 
 
-	inline
-	const u64_vector&
-	index() const {
-		return _index;
-	}
-
-
 	template <typename T, typename... Args>
 	static
 	const T
@@ -168,10 +161,6 @@ private:
 	// the data type of the item (equal to the data type of its ndarray)
 	const struct dtype &
 		_dtype;
-
-	// index of this item
-	const u64_vector
-		_index;
 };
 
 
@@ -381,7 +370,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(Indexes... index)
 	{
-		return ndarray_item(this->get(index...), _dtype, {index...});
+		return ndarray_item(this->get(index...), _dtype);
 	}
 
 
@@ -394,7 +383,7 @@ struct ndarray
 	inline ndarray_item
 	operator()(u64_vector indexes)
 	{
-		return ndarray_item(this->get(indexes), _dtype, indexes);
+		return ndarray_item(this->get(indexes), _dtype);
 	}
 
 
@@ -513,8 +502,7 @@ struct ndarray
 	}
 
 
-	// TODO: give each ndarray_item its index
-	template <typename Func = std::function<void (const ndarray_item&)>>
+	template <typename Func = std::function<void (const ndarray_item&, size_t)>>
 	inline void
 	map(Func func)
 	{
@@ -522,8 +510,7 @@ struct ndarray
 			func(ndarray_item(
 					u8_subrange(_data.begin() + _dtype.item_size * i,
 								_data.begin() + _dtype.item_size * (i + 1)),
-					_dtype,
-					this->unravel<u64>(i)));
+					_dtype), i);
 		}
 	}
 

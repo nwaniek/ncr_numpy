@@ -541,9 +541,9 @@ example_nested()
 	// required type via ndarray_item::as.
 	std::cout << "\n";
 	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
-	arr.map([](const numpy::ndarray_item &item) {
+	arr.map([&](const numpy::ndarray_item &item, size_t flat_index) {
 			auto &record = item.as<year_gdp_record_packed_t>();
-			std::cout << "  " << record.year << " (item index: " << item.index() << ")\n";
+			std::cout << "  " << record.year << " (item index: " << arr.unravel(flat_index) << ")\n";
 			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
@@ -564,7 +564,7 @@ example_nested()
 	// map the data into our custom structs using the array's map function and a
 	// suitable lambda/callback
 	old_state.copyfmt(std::cout);
-	arr.map([](const numpy::ndarray_item &item) {
+	arr.map([](const numpy::ndarray_item &item, size_t) {
 		// Manually map each field into a struct member.
 		//
 		// The example shows how to use either the static ::field method of
