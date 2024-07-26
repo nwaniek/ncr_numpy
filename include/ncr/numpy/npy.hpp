@@ -804,14 +804,14 @@ validate_data_size(const npyfile &finfo, const dtype &dt, u64 &size)
 
 
 inline result
-compute_data_size(const u8_vector &buffer, ssize_t bufpos, npyfile &finfo)
+compute_data_size(const u8_vector &buffer, ssize_t bufpos, npyfile &npy)
 {
 	// TODO: for streaming objects, cannot compute the size (potentially missing
 	// seekg, tellg)
-	if (finfo.streaming)
+	if (npy.streaming)
 		return result::ok;
 
-	finfo.data_size = buffer.size() - bufpos;
+	npy.data_size = buffer.size() - bufpos;
 	return result::ok;
 }
 
