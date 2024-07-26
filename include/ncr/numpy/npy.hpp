@@ -848,14 +848,14 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	// validation functions, while also allowing to implement the validation
 	// functions based in ranges::input_range
 	typedef result (*fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
-	auto _call = [&buf, &bufpos, &npy](fn_t validate_fn, size_t byte_count) {
+	auto _call = [&buf, &bufpos, &npy](fn_t fn, size_t byte_count) {
 		auto begin = buf.begin() + bufpos;
 		auto end = begin + byte_count;
 		if (end > buf.end())
 			end = buf.end();
 		auto subrange = std::ranges::subrange(begin, end);
 		bufpos += byte_count;
-		return validate_fn(std::move(subrange), npy);
+		return fn(std::move(subrange), npy);
 	};
 
 	// go through each step
