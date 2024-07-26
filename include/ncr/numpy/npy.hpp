@@ -970,20 +970,14 @@ from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
 	buf.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
 #endif
 
-	// if the caller didnt pass in a preallocated object, we'll allocate one
-	// because it is needed during from_buffer
-	bool tmp_npy = npy == nullptr;
-	if (tmp_npy)
-		npy = new npyfile{};
+	// if the caller didnt pass in a preallocated object, we'll use a local one.
+	// this way avoids allocating an object, as _npy is already present on the
+	// stack. it also doesn't tamper with the npy pointer
+	npyfile _tmp;
+	npyfile *npy_ptr = npy == nullptr ? &_tmp : npy;
 
 	// Note the change in argument order!
-	res = from_buffer(std::move(buf), *npy, array);
-
-	// delete the temporary if necessary
-	if (tmp_npy) {
-		delete npy;
-		npy = nullptr;
-	}
+	res = from_buffer(std::move(buf), *npy_ptr, array);
 
 	// done
 	return res;
