@@ -99,6 +99,7 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include <array>
 #include <algorithm>
 #include <iterator>
 #include <map>
@@ -154,12 +155,12 @@ struct npyfile
 		file_size                   {0};
 
 	// storage for the magic string.
-	u8
-		magic[magic_byte_count]     {};
+	std::array<u8, magic_byte_count>
+		magic;
 
 	// storage for the version
-	u8
-		version[version_byte_count] {};
+	std::array<u8, version_byte_count>
+		version;
 
 	// the numpy header which describes which data type is stored in this numpy
 	// array and how it is stored. Essentially this is a string representation
@@ -435,36 +436,53 @@ read_header(std::istream &is, npy_file &finfo)
 #endif
 
 
-inline result
-validate_magic_string(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
+template <std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+result
+validate_magic_string(R &&buffer, npyfile &npy)
 {
-	if (buffer.size() - bufpos < npy.magic_byte_count)
-		return result::error_magic_string_invalid;
-
-	for (size_t i = 0; i < npy.magic_byte_count; i++)
-		npy.magic[i] = buffer[bufpos++];
+	if constexpr (std::ranges::contiguous_range<R>) {
+		if (buffer.size() < npyfile::magic_byte_count)
+			return result::error_magic_string_invalid;
+		std::copy_n(buffer.data(), npyfile::magic_byte_count, npy.magic.begin());
+	}
+	else {
+		auto it = std::ranges::begin(buffer);
+		auto end = std::ranges::end(buffer);
+		if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npyfile::magic_byte_count))
+			return result::error_magic_string_invalid;
+		std::copy_n(it, npyfile::magic_byte_count, npy.magic.begin());
+	}
 
 	if (npy.magic[0] != 0x93 ||
-	    npy.magic[1] != 'N'  ||
-	    npy.magic[2] != 'U'  ||
-	    npy.magic[3] != 'M'  ||
-	    npy.magic[4] != 'P'  ||
-	    npy.magic[5] != 'Y')
+		npy.magic[1] != 'N'  ||
+		npy.magic[2] != 'U'  ||
+		npy.magic[3] != 'M'  ||
+		npy.magic[4] != 'P'  ||
+		npy.magic[5] != 'Y')
 		return result::error_magic_string_invalid;
 
 	return result::ok;
 }
 
 
-inline result
-validate_version(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
+template <std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+result
+validate_version(R &&buffer, npyfile &npy)
 {
-	// TODO: more specific error
-	if (buffer.size() - bufpos < npy.version_byte_count)
-		return result::error_file_truncated;
-
-	for (size_t i = 0; i < npy.version_byte_count; i++)
-		npy.version[i] = buffer[bufpos++];
+	if constexpr (std::ranges::contiguous_range<R>) {
+		if (buffer.size() < npyfile::version_byte_count)
+			return result::error_file_truncated;
+		std::copy_n(buffer.data(), npyfile::version_byte_count, npy.version.begin());
+	}
+	else {
+		auto it = std::ranges::begin(buffer);
+		auto end = std::ranges::end(buffer);
+		if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npyfile::version_byte_count))
+			return result::error_file_truncated;
+		std::copy_n(it, npyfile::version_byte_count, npy.version.begin());
+	}
 
 	// currently, only 1.0 and 2.0 are supported
 	if ((npy.version[0] != 0x01 && npy.version[0] != 0x02) || (npy.version[1] != 0x00))
@@ -480,19 +498,25 @@ validate_version(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
 }
 
 
-inline result
-validate_header_length(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
+template <std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+result
+validate_header_length(R &&buffer, npyfile &npy)
 {
-	// TODO: more specific error message
-	if (buffer.size() - bufpos < npy.header_size_byte_count)
+	auto it = std::ranges::begin(buffer);
+	auto end = std::ranges::end(buffer);
+	if (std::distance(it, end) != static_cast<std::ptrdiff_t>(npy.header_size_byte_count))
 		return result::error_file_truncated;
 
 	npy.header_size = 0;
-	for (size_t i = 0; i < npy.header_size_byte_count; i++)
-		npy.header_size |= buffer[bufpos++] << (i * 8);
+	size_t i = 0;
+	for (auto &elem: buffer) {
+		npy.header_size |= elem << (i * 8);
+		i++;
+	}
 
 	// validate the length: len(magic string) + 2 + len(length) + HEADER_LEN must be divisible by 64
-	npy.data_offset = npy.magic_byte_count + npy.version_byte_count + npy.header_size_byte_count + npy.header_size;
+	npy.data_offset = npyfile::magic_byte_count + npy.version_byte_count + npy.header_size_byte_count + npy.header_size;
 	if (npy.data_offset % 64 != 0)
 		return result::error_header_invalid_length;
 
@@ -500,16 +524,19 @@ validate_header_length(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
 }
 
 
-inline result
-validate_header(const u8_vector &buffer, ssize_t &bufpos, npyfile &npy)
+template <std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+result
+validate_header(R &&buffer, npyfile &npy)
 {
-	if (buffer.size() - bufpos < npy.header_size)
-		return result::error_header_truncated;
+	auto it = std::ranges::begin(buffer);
+	auto end = std::ranges::end(buffer);
+	if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npy.header_size))
+		return result::error_file_truncated;
 
-	// reserve and copy
+	// reserve memory and copy data into it
 	npy.header.reserve(npy.header_size);
-	std::copy(buffer.begin() + bufpos, buffer.begin() + bufpos + npy.header_size, std::back_inserter(npy.header));
-	bufpos += npy.header_size;
+	std::copy_n(it, npy.header_size, std::back_inserter(npy.header));
 
 	// test the size
 	if (npy.header.size() < npy.header_size)
@@ -814,16 +841,32 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	storage_order order;
 	u64           size;
 
-	// go through each step (will update bufpos along the way)
 	ssize_t bufpos = 0;
-	if ((res |= validate_magic_string(buf, bufpos, npy) , is_error(res))) return res;
-	if ((res |= validate_version(buf, bufpos, npy)      , is_error(res))) return res;
-	if ((res |= validate_header_length(buf, bufpos, npy), is_error(res))) return res;
-	if ((res |= validate_header(buf, bufpos, npy)       , is_error(res))) return res;
-	if ((res |= compute_data_size(buf, bufpos, npy)     , is_error(res))) return res;
-	if ((res |= parse_header(npy, dt, order, shape)     , is_error(res))) return res;
-	if ((res |= compute_item_size(dt)                   , is_error(res))) return res;
-	if ((res |= validate_data_size(npy, dt, size)       , is_error(res))) return res;
+	// the following lambda will take a 'validation function', compute the
+	// appropriate end iterator, update the buffer position, and call the
+	// function. this avoids having bufpos updates as side-effects in the
+	// validation functions, while also allowing to implement the validation
+	// functions based in ranges::input_range
+	typedef result (*validate_fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
+	auto _call = [&buf, &bufpos, &npy](validate_fn_t validate_fn, size_t byte_count) {
+		auto begin = buf.begin() + bufpos;
+		auto end = begin + byte_count;
+		if (end > buf.end())
+			end = buf.end();
+		auto subrange = std::ranges::subrange(begin, end);
+		bufpos += byte_count;
+		return validate_fn(std::move(subrange), npy);
+	};
+
+	// go through each step
+	if ((res |= _call(validate_magic_string,  npyfile::magic_byte_count)  , is_error(res))) return res;
+	if ((res |= _call(validate_version,       npyfile::version_byte_count), is_error(res))) return res;
+	if ((res |= _call(validate_header_length, npy.header_size_byte_count) , is_error(res))) return res;
+	if ((res |= _call(validate_header,        npy.header_size)            , is_error(res))) return res;
+	if ((res |= compute_data_size(buf, bufpos, npy)                       , is_error(res))) return res;
+	if ((res |= parse_header(npy, dt, order, shape)                       , is_error(res))) return res;
+	if ((res |= compute_item_size(dt)                                     , is_error(res))) return res;
+	if ((res |= validate_data_size(npy, dt, size)                         , is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
 	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
@@ -943,6 +986,8 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 }
 
 
+// TODO: mode that doesn't read the entire file but only iterates over the
+// underlying data
 inline result
 from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
 {

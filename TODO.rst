@@ -7,6 +7,9 @@ general: * iterator support during reads (output iterator)
               ncr::numpy::load('file.npy', iterator);
            -> this should write dtype'd items to the iterator
 
+general: maybe transition from u8_vector to std::vector<std::byte> for data
+         containers
+
 npy: load simple npy from non-seekable IO stream (TCP, named pipe)
 npy: load simple npz from non-seekable IO stream (TCP, named pipe)
 npy: support Eigen matrices / arrays as backend
