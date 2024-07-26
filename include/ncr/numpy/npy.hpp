@@ -439,7 +439,7 @@ read_header(std::istream &is, npy_file &finfo)
 template <std::ranges::input_range R>
 requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
 result
-validate_magic_string(R &&buffer, npyfile &npy)
+process_magic_string(R &&buffer, npyfile &npy)
 {
 	if constexpr (std::ranges::contiguous_range<R>) {
 		if (buffer.size() < npyfile::magic_byte_count)
@@ -469,7 +469,7 @@ validate_magic_string(R &&buffer, npyfile &npy)
 template <std::ranges::input_range R>
 requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
 result
-validate_version(R &&buffer, npyfile &npy)
+process_version(R &&buffer, npyfile &npy)
 {
 	if constexpr (std::ranges::contiguous_range<R>) {
 		if (buffer.size() < npyfile::version_byte_count)
@@ -501,7 +501,7 @@ validate_version(R &&buffer, npyfile &npy)
 template <std::ranges::input_range R>
 requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
 result
-validate_header_length(R &&buffer, npyfile &npy)
+process_header_length(R &&buffer, npyfile &npy)
 {
 	auto it = std::ranges::begin(buffer);
 	auto end = std::ranges::end(buffer);
@@ -527,7 +527,7 @@ validate_header_length(R &&buffer, npyfile &npy)
 template <std::ranges::input_range R>
 requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
 result
-validate_header(R &&buffer, npyfile &npy)
+process_header(R &&buffer, npyfile &npy)
 {
 	auto it = std::ranges::begin(buffer);
 	auto end = std::ranges::end(buffer);
@@ -859,14 +859,14 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	};
 
 	// go through each step
-	if ((res |= _call(validate_magic_string,  npyfile::magic_byte_count)  , is_error(res))) return res;
-	if ((res |= _call(validate_version,       npyfile::version_byte_count), is_error(res))) return res;
-	if ((res |= _call(validate_header_length, npy.header_size_byte_count) , is_error(res))) return res;
-	if ((res |= _call(validate_header,        npy.header_size)            , is_error(res))) return res;
-	if ((res |= compute_data_size(buf, bufpos, npy)                       , is_error(res))) return res;
-	if ((res |= parse_header(npy, dt, order, shape)                       , is_error(res))) return res;
-	if ((res |= compute_item_size(dt)                                     , is_error(res))) return res;
-	if ((res |= validate_data_size(npy, dt, size)                         , is_error(res))) return res;
+	if ((res |= _call(process_magic_string,  npyfile::magic_byte_count)  , is_error(res))) return res;
+	if ((res |= _call(process_version,       npyfile::version_byte_count), is_error(res))) return res;
+	if ((res |= _call(process_header_length, npy.header_size_byte_count) , is_error(res))) return res;
+	if ((res |= _call(process_header,        npy.header_size)            , is_error(res))) return res;
+	if ((res |= compute_data_size(buf, bufpos, npy)                      , is_error(res))) return res;
+	if ((res |= parse_header(npy, dt, order, shape)                      , is_error(res))) return res;
+	if ((res |= compute_item_size(dt)                                    , is_error(res))) return res;
+	if ((res |= validate_data_size(npy, dt, size)                        , is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
 	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
