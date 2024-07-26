@@ -952,7 +952,6 @@ from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
 	if ((res = open_fstream(filepath, f)) != result::ok)
 		return res;
 
-
 	// test if this is a PKzip file, and if yes then we exit early. for loading
 	// npz files, use from_npz
 	if (is_zip_file(f))
