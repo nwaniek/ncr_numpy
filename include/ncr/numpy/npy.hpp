@@ -847,8 +847,8 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	// function. this avoids having bufpos updates as side-effects in the
 	// validation functions, while also allowing to implement the validation
 	// functions based in ranges::input_range
-	typedef result (*validate_fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
-	auto _call = [&buf, &bufpos, &npy](validate_fn_t validate_fn, size_t byte_count) {
+	typedef result (*fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
+	auto _call = [&buf, &bufpos, &npy](fn_t validate_fn, size_t byte_count) {
 		auto begin = buf.begin() + bufpos;
 		auto end = begin + byte_count;
 		if (end > buf.end())
