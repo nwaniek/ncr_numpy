@@ -117,9 +117,13 @@
 namespace ncr { namespace numpy {
 
 /*
- * forward declarations
+ * forward declarations and typedefs
  */
 struct npyfile;
+struct npzfile;
+enum class result : u64;
+
+typedef std::variant<result, ndarray, npzfile> variant_result;
 
 
 /*
@@ -130,16 +134,16 @@ concept NDArray = std::derived_from<T, ndarray>;
 
 
 template<typename F>
-concept ReadCallback = requires(F f, const dtype& dt, u8_vector item) {
-    { f(dt, std::move(item)) } -> std::same_as<void>;
+concept ReaderCallback = requires(F f, const dtype& dt, const u64_vector &shape, const storage_order &order, u64 index, u8_vector item) {
+    { f(dt, shape, order, index, std::move(item)) } -> std::same_as<bool>;
 };
 
 template <typename T>
 concept ReadableSource = requires(T &source, uint8_t *dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
 	{ source.eof() } -> std::same_as<bool>;
+	// TODO: maybe also fail()
 };
-
 
 
 
@@ -215,8 +219,8 @@ clear(npyfile &npy)
 	npy.data_offset            = 0;
 	npy.data_size              = 0;
 	npy.file_size              = 0;
-	for (size_t i = 0; i < npy.magic_byte_count; i++)   npy.magic[i]   = 0;
-	for (size_t i = 0; i < npy.version_byte_count; i++) npy.version[i] = 0;
+	npy.magic.fill(0);
+	npy.version.fill(0);
 	npy.header.clear();
 	npy.streaming              = false;
 }
@@ -463,11 +467,11 @@ read_header(std::istream &is, npy_file &finfo)
 
 
 /*
- * readable_buffer - wrapper for vectors to make them a ReadableSource
+ * buffer_read - wrapper for vectors/buffers to make them a ReadableSource
  */
-struct readable_buffer
+struct buffer_reader
 {
-	readable_buffer(u8_vector &data) : _data(data), _pos(0) {}
+	buffer_reader(u8_vector &data) : _data(data), _pos(0) {}
 
 	std::size_t
 	read(uint8_t *dest, std::size_t size)
@@ -486,6 +490,38 @@ struct readable_buffer
 
 	u8_vector   _data;
 	std::size_t _pos;
+};
+
+
+/*
+ * ifstream_reader - wrapper for ifstreams to make them a ReadableSource
+ */
+struct ifstream_reader
+{
+	ifstream_reader(std::ifstream &stream) : _stream(stream), _eof(false), _fail(false) {}
+
+	std::size_t
+	read(uint8_t *dest, std::size_t size)
+	{
+		_stream.read(reinterpret_cast<char *>(dest), size);
+		_fail = _stream.fail();
+		_eof  = _stream.eof();
+		return _stream.gcount();
+	}
+
+	bool
+	eof() {
+		return _eof;
+	}
+
+	bool
+	fail() {
+		return _fail;
+	}
+
+	std::ifstream &_stream;
+	bool _eof;
+	bool _fail;
 };
 
 
@@ -860,7 +896,7 @@ compute_data_size(T &source, npyfile &npy)
 {
 	// TODO: implement for other things or use another approach to externalize
 	//       type detection
-	if constexpr (std::is_same_v<T, readable_buffer>) {
+	if constexpr (std::is_same_v<T, buffer_reader>) {
 		npy.data_size = source._data.size() - source._pos;
 	}
 	else {
@@ -915,7 +951,7 @@ from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 	storage_order order;
 
 	// wrap the buffer so that it becomes a ReadableSource
-	auto source = readable_buffer(buffer);
+	auto source = buffer_reader(buffer);
 	if ((res = process_file_header(source, npy, dt, shape, order), is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
@@ -1050,17 +1086,11 @@ read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(
 
 
 /*
- * from_nyp - read a file into a container
- *
- * When reading a file into an ndarray, we read the file in one go into a buffer
- * and then process it.
+ * open_npy - attempt to open an npy file
  */
-template <NDArray NDArrayType>
-result
-from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
+inline result
+open_npy(std::filesystem::path filepath, std::ifstream &file)
 {
-	// open the file
-	std::ifstream file;
 	result res;
 	if ((res = open_fstream(filepath, file)) != result::ok)
 		return res;
@@ -1070,11 +1100,31 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	if (is_zip_file(file))
 		return result::error_wrong_filetype;
 
+	file.seekg(0);
+	return res;
+}
+
+
+
+/*
+ * from_nyp - read a file into a container
+ *
+ * When reading a file into an ndarray, we read the file in one go into a buffer
+ * and then process it.
+ */
+template <NDArray NDArrayType>
+result
+from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
+{
+	// try to open the file
+	result res = result::ok;
+	std::ifstream file;
+	if ((res = open_npy(filepath, file), is_error(res))) return res;
+
 	// read the file into a vector. the c++ iostream interface is horrible to
 	// work with and considered bad design by many developers. We'll load the
 	// file into a vector (which is not the fastest), but then working with it
 	// is reasonably simple
-	file.seekg(0);
 #if NCR_FSTREAM_UNSAFE_READ
 	auto filesize = ncr::get_file_size(file);
 	u8_vector buf(filesize);
@@ -1099,29 +1149,56 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 }
 
 
-/*
-template <ReadCallback Callback>
+template <ReaderCallback Callback>
 result
 from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullptr)
 {
-	// open the file
+	// try to open the file
+	result res = result::ok;
 	std::ifstream file;
-	result res;
-	if ((res = open_fstream(filepath, file)) != result::ok)
-		return res;
+	if ((res = open_npy(filepath, file), is_error(res))) return res;
 
-	// test if this is a PKzip file, and if yes then we exit early. for loading
-	// npz files, use from_npz
-	if (is_zip_file(file))
-		return result::error_wrong_filetype;
+	// see comment in from_npy for NDArrayType
+	npyfile _tmp;
+	npyfile *npy_ptr = npy ? npy : &_tmp;
 
+	dtype         dt;
+	u64_vector    shape;
+	storage_order order;
+	auto source = ifstream_reader(file);
+	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) return res;
 
+	// at this point we know the item size, and can read items from the file
+	// until we hit eof
+	for (u64 i = 0;; ++i) {
+		u8_vector buffer(dt.item_size, 0);
+		size_t bytes_read = source.read(buffer.data(), dt.item_size);
+		if (bytes_read != dt.item_size) {
+			// EOF -> nothing more to read, w'ere in a good state
+			if (bytes_read == 0 && source.eof())
+				break;
+			else {
+				// there was some failure while reading. this might also be set
+				// when trying to read more bytes than available
+				// TODO: determine when this might happen
+				if (source.fail())
+					res = result::error_file_read_failed;
+
+				// the file is truncated, there were not enough bytes for
+				// another item.
+				else
+					res = result::error_file_truncated;
+
+				break;
+			}
+		}
+		// when the callback returns false, the user wants an early exit
+		if (!callback(dt, shape, order, i, std::move(buffer)))
+			break;
+	}
+	return res;
 }
-*/
 
-
-
-typedef std::variant<result, ndarray, npzfile> variant_result;
 
 //
 // helpers to extract the type from the variant. If you're sure about the file

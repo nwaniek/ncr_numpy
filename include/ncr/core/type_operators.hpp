@@ -30,13 +30,19 @@ operator<<(std::ostream &os, const std::ranges::subrange<T> &range)
 	return os;
 }
 
-
 template <typename T>
 inline std::ostream&
 operator<<(std::ostream &os, const std::vector<T> &vec)
 {
-	for (auto it = vec.begin(); it != vec.end(); ++it)
-		os << (*it);
+	auto it = vec.begin();
+	if (it == vec.end())
+		return os;
+
+	os << (*it);
+	it++;
+	for (auto it = vec.begin(); it != vec.end(); ++it) {
+		os << ", " << (*it);
+	}
 	return os;
 }
 

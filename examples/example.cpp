@@ -197,31 +197,6 @@ example_advanced_api(size_t padwidth = 30)
 
 
 /*
- * example_iterator - how to use iterators when reading data
- */
-void
-example_iterator()
-{
-	// sometimes data is too big to fit into memory, or one wants to pass the
-	// data to an iterator, or it's not required to hold all data in memory, but
-	// go through each item in a file once, process it, and then close the file
-	// again. if that's the case, then the following function can be used
-
-	// Internally, this variant opens the file, and reads one item at a
-	// time and reports it back to you. Note that ncr::numpy does not know how
-	// to handle the dtype, meaning it is unaware what to do with the actual
-	// data, which is why you get a vector with the data. Casting it to the
-	// appropriate type (while checking byte ordering, endianness, etc.) is up
-	// to you.
-	//
-	//numpy::from_npy("assets/in/simple.npy",
-	//	[&](dtype, u8_subrange){
-	//		// do something with the subrange item here
-	//	});
-}
-
-
-/*
  * example_serialization - examples for writing numpy arrays
  */
 void
@@ -621,6 +596,62 @@ example_nested()
 }
 
 
+/*
+ * example_callback - how to use a callback when reading data
+ */
+void
+example_callback()
+{
+	// sometimes data is too big to fit into memory, or one wants to pass the
+	// data to an iterator, or it's not required to hold all data in memory, but
+	// go through each item in a file once, process it, and then close the file
+	// again. if that's the case, then the numpy::from_npy with a callback
+	// function can be used.
+
+	// Internally, this variant opens the file, parses the header, and reads one
+	// item at a time and reports it back to you. Note that ncr::numpy does not
+	// know how to handle the dtype, meaning it is unaware what to do with the
+	// actual data, which is why you get a vector with the data (in addition to
+	// all the dtype, shape, order information as well as a flat index to the
+	// item). Casting it to the appropriate type (while checking byte ordering,
+	// endianness, etc.) is up to you, also unravelling the flat index to a
+	// multi-index if you need it.
+
+	// the tensor contains i64 values, from which we want to sum up the first 30
+	// elements
+	i64 sum = 0;
+	constexpr u64 max_count = 30;
+
+	numpy::result res;
+	if ((res = numpy::from_npy("assets/in/simpletensor2.npy",
+		[&](const numpy::dtype &, const u64_vector& shape, const numpy::storage_order& order, u64 index, u8_vector item){
+			// To exit early, simply return false from within the callback.
+			// for instance when we read enough data
+			if (index >= max_count)
+				return false;
+
+			// here we cast the data into the format that we want/expect. We
+			// could also use dtype to determine if the data is actually in the
+			// format that we expect, and if not, exit early.
+			i64 value = *reinterpret_cast<i64*>(item.data());
+			auto multi_index = numpy::unravel_index(index, shape, order);
+			std::cout << "Item " << index << " [" << multi_index << "]: " << value << "\n";
+			sum += value;
+
+			// we return true to let the backend know that we want to have more
+			// data
+			return true;
+		})) != numpy::result::ok)
+	{
+		std::cout << "Error reading file: " << res << "\n";
+	}
+	else {
+		std::cout << "Computed sum = " << sum << " (expected sum = 435)\n";
+	}
+}
+
+
+
 int
 main()
 {
@@ -633,7 +664,8 @@ main()
 	example_serialization(); std::cout << "\n";
 	example_facade();        std::cout << "\n";
 	example_structured();    std::cout << "\n";
-	example_nested();
+	example_nested();        std::cout << "\n";
+	example_callback();
 
 
 	return 0;
