@@ -105,6 +105,7 @@
 #include <map>
 #include <variant>
 #include <unordered_set>
+#include <type_traits>
 
 #include <ncr/core/types.hpp>
 #include <ncr/core/bits.hpp>
@@ -660,7 +661,7 @@ parse_descr(pyparser::parse_result *descr, dtype &dt)
 
 
 inline result
-parse_header(npyfile &finfo, dtype &dt, storage_order &order, u64_vector &shape)
+parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 {
 	// the header of a numpy file is an ASCII-string terminated by \n and padded
 	// with 0x20 (whitespace), i.e. string\x20\x20\x20...\n, where string is a
@@ -685,7 +686,7 @@ parse_header(npyfile &finfo, dtype &dt, storage_order &order, u64_vector &shape)
 
 	// try to parse the header
 	pyparser parser;
-	auto pres = parser.parse(finfo.header);
+	auto pres = parser.parse(npy.header);
 	if (!pres)
 		return result::error_header_parsing_error;
 
@@ -793,12 +794,18 @@ compute_item_size(dtype &dt, u64 offset = 0)
 
 
 inline result
-validate_data_size(const npyfile &npy, const dtype &dt, u64 &size)
+validate_data_size(const npyfile &npy, const dtype &dt)
 {
+	// TODO: for streaming data, we cannot decide this (we don't know yet how
+	// much data there will be)
+	if (npy.streaming)
+		return result::ok;
+
 	// detect if data is truncated
 	if (npy.data_size % dt.item_size != 0)
 		return result::error_data_size_mismatch;
-	size = npy.data_size / dt.item_size;
+
+	// size = npy.data_size / dt.item_size;
 	return result::ok;
 }
 
@@ -806,13 +813,18 @@ validate_data_size(const npyfile &npy, const dtype &dt, u64 &size)
 inline result
 compute_data_size(const u8_vector &buffer, ssize_t bufpos, npyfile &npy)
 {
-	// TODO: for streaming objects, cannot compute the size (potentially missing
-	// seekg, tellg)
-	if (npy.streaming)
+	// TODO: for streaming objects, cannot get the real size  from the buffer
+	// (potentially missing seekg, tellg)
+	if (npy.streaming) {
+		// TODO: we could use the shape and item_size of the array from the
+		// header and store how much data we would expect
+		npy.data_size = 0;
 		return result::ok;
-
-	npy.data_size = buffer.size() - bufpos;
-	return result::ok;
+	}
+	else {
+		npy.data_size = buffer.size() - bufpos;
+		return result::ok;
+	}
 }
 
 
@@ -832,21 +844,20 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 {
 	result res = result::ok;
 
-	// setup the finfo struct
+	// setup the npyfile struct
 	npy.streaming = false;
 
 	// parts of the array description (will be moved into the array later)
 	dtype         dt;
 	u64_vector    shape;
 	storage_order order;
-	u64           size;
 
-	ssize_t bufpos = 0;
 	// the following lambda will take a 'validation function', compute the
 	// appropriate end iterator, update the buffer position, and call the
 	// function. this avoids having bufpos updates as side-effects in the
 	// validation functions, while also allowing to implement the validation
 	// functions based in ranges::input_range
+	ssize_t bufpos = 0;
 	typedef result (*fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
 	auto _call = [&buf, &bufpos, &npy](fn_t fn, size_t byte_count) {
 		auto begin = buf.begin() + bufpos;
@@ -858,15 +869,17 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 		return fn(std::move(subrange), npy);
 	};
 
-	// go through each step
+	// read stuff
 	if ((res |= _call(read_magic_string,  npyfile::magic_byte_count)  , is_error(res))) return res;
 	if ((res |= _call(read_version,       npyfile::version_byte_count), is_error(res))) return res;
 	if ((res |= _call(read_header_length, npy.header_size_byte_count) , is_error(res))) return res;
 	if ((res |= _call(read_header,        npy.header_size)            , is_error(res))) return res;
-	if ((res |= compute_data_size(buf, bufpos, npy)                   , is_error(res))) return res;
-	if ((res |= parse_header(npy, dt, order, shape)                   , is_error(res))) return res;
-	if ((res |= compute_item_size(dt)                                 , is_error(res))) return res;
-	if ((res |= validate_data_size(npy, dt, size)                     , is_error(res))) return res;
+
+	// compute/parse stuff
+	if ((res |= parse_header(npy, dt, order, shape), is_error(res))) return res;
+	if ((res |= compute_item_size(dt)              , is_error(res))) return res;
+	if ((res |= compute_data_size(buf, bufpos, npy), is_error(res))) return res;
+	if ((res |= validate_data_size(npy, dt)        , is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
 	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
@@ -986,47 +999,107 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 }
 
 
-// TODO: mode that doesn't read the entire file but only iterates over the
-// underlying data
-inline result
-from_npy(std::filesystem::path filepath, ndarray &array, npyfile *npy = nullptr)
+template <typename T>
+concept OutputIterator = std::output_iterator<T, typename std::iterator_traits<T>::value_type>;
+
+
+template <typename T>
+concept Container = std::ranges::range<T>;
+
+
+template <typename T>
+concept NDArray = std::derived_from<T, ndarray>;
+
+template<typename F>
+concept ReadCallback = requires(F f, const dtype& dt, u8_vector item) {
+    { f(dt, std::move(item)) } -> std::same_as<void>;
+};
+
+
+inline void
+read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(u8_vector)>& callback)
+{
+	u8_vector buffer(num_bytes);
+	if (file.read(reinterpret_cast<char*>(buffer.data()), num_bytes)) {
+		callback(std::move(buffer));
+	} else {
+		// Handle read error
+	}
+}
+
+
+
+/*
+ * from_nyp - read a file into a container
+ *
+ * When reading a file into an ndarray, we read the file in one go into a buffer
+ * and then process it.
+ */
+template <NDArray NDArrayType>
+result
+from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
 {
 	// open the file
+	std::ifstream file;
 	result res;
-	std::ifstream f;
-	if ((res = open_fstream(filepath, f)) != result::ok)
+	if ((res = open_fstream(filepath, file)) != result::ok)
 		return res;
 
 	// test if this is a PKzip file, and if yes then we exit early. for loading
 	// npz files, use from_npz
-	if (is_zip_file(f))
+	if (is_zip_file(file))
 		return result::error_wrong_filetype;
 
 	// read the file into a vector. the c++ iostream interface is horrible to
 	// work with and considered bad design by many developers. We'll load the
 	// file into a vector (which is not the fastest), but then working with it
 	// is reasonably simple
-	f.seekg(0);
-	auto filesize = ncr::get_file_size(f);
-	u8_vector buf(filesize);
+	file.seekg(0);
 #if NCR_FSTREAM_UNSAFE_READ
-	f.read(reinterpret_cast<char*>(buf.data()), filesize);
+	auto filesize = ncr::get_file_size(file);
+	u8_vector buf(filesize);
+	file.read(reinterpret_cast<char*>(buf.data()), filesize);
 #else
 	buf.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
 #endif
 
 	// if the caller didnt pass in a preallocated object, we'll use a local one.
-	// this way avoids allocating an object, as _npy is already present on the
+	// this way avoids allocating an object, as _tmp is already present on the
 	// stack. it also doesn't tamper with the npy pointer
 	npyfile _tmp;
-	npyfile *npy_ptr = npy == nullptr ? &_tmp : npy;
+	npyfile *npy_ptr = npy ? npy : &_tmp;
 
 	// Note the change in argument order!
 	res = from_buffer(std::move(buf), *npy_ptr, array);
 
 	// done
 	return res;
+
+	return result::ok;
 }
+
+
+template <ReadCallback Callback>
+result
+from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullptr)
+{
+	// open the file
+	std::ifstream file;
+	result res;
+	if ((res = open_fstream(filepath, file)) != result::ok)
+		return res;
+
+	// test if this is a PKzip file, and if yes then we exit early. for loading
+	// npz files, use from_npz
+	if (is_zip_file(file))
+		return result::error_wrong_filetype;
+
+
+}
+
+
+
+
 
 
 typedef std::variant<result, ndarray, npzfile> variant_result;

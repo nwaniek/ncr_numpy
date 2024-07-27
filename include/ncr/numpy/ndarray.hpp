@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cassert>
+#include <type_traits>
 #include <functional>
 
 #include <ncr/core/types.hpp>

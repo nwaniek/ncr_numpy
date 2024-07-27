@@ -9,6 +9,7 @@ general: * iterator support during reads (output iterator)
 
 general: maybe transition from u8_vector to std::vector<std::byte> for data
          containers
+general: move non-public API to detail:: namespace
 
 npy: load simple npy from non-seekable IO stream (TCP, named pipe)
 npy: load simple npz from non-seekable IO stream (TCP, named pipe)
