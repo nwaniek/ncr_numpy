@@ -30,6 +30,7 @@ operator<<(std::ostream &os, const std::ranges::subrange<T> &range)
 	return os;
 }
 
+
 template <typename T>
 inline std::ostream&
 operator<<(std::ostream &os, const std::vector<T> &vec)
@@ -45,6 +46,7 @@ operator<<(std::ostream &os, const std::vector<T> &vec)
 	}
 	return os;
 }
+
 
 
 } // ncr::
