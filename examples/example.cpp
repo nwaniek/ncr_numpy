@@ -197,6 +197,29 @@ example_advanced_api(size_t padwidth = 30)
 
 
 /*
+ * example_iterator - how to use iterators when reading data
+ */
+void
+example_iterator()
+{
+	// sometimes data is too big to fit into memory, or one wants to pass the
+	// data to an iterator, or it's not required to hold all data in memory, but
+	// go through each item in a file once, process it, and then close the file
+	// again. if that's the case, then the following function can be used
+
+	// Internally, this variant opens the file, and reads one item at a
+	// time and reports it back to you. Note that ncr::numpy does not know how
+	// to handle the dtype, meaning it is unaware what to do with the actual
+	// data, which is why you get a vector with the data. Casting it to the
+	// appropriate type (while checking byte ordering, endianness, etc.) is up
+	// to you.
+	//
+	//numpy::from_npy("assets/in/simple.npy",
+	//	[&](dtype, u8_subrange)
+}
+
+
+/*
  * example_serialization - examples for writing numpy arrays
  */
 void
