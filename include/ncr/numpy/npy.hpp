@@ -105,7 +105,6 @@
 #include <map>
 #include <variant>
 #include <unordered_set>
-#include <type_traits>
 
 #include <ncr/core/types.hpp>
 #include <ncr/core/bits.hpp>
@@ -116,6 +115,33 @@
 
 
 namespace ncr { namespace numpy {
+
+/*
+ * forward declarations
+ */
+struct npyfile;
+
+
+/*
+ * concepts
+ */
+template <typename T>
+concept NDArray = std::derived_from<T, ndarray>;
+
+
+template<typename F>
+concept ReadCallback = requires(F f, const dtype& dt, u8_vector item) {
+    { f(dt, std::move(item)) } -> std::same_as<void>;
+};
+
+template <typename T>
+concept ReadableSource = requires(T &source, uint8_t *dest, std::size_t size) {
+	{ source.read(dest, size) } -> std::same_as<std::size_t>;
+	{ source.eof() } -> std::same_as<bool>;
+};
+
+
+
 
 /*
  * npyfile - file information of a numpy file
@@ -378,7 +404,6 @@ operator<<(std::ostream &os, const byte_order &order)
 }
 
 
-
 /*
  * istream interface is currently not directly supported because we read the
  * file in one go. Nevertheless, the functions below are kept as a starting
@@ -437,53 +462,59 @@ read_header(std::istream &is, npy_file &finfo)
 #endif
 
 
-template <std::ranges::input_range R>
-requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
-result
-read_magic_string(R &&buffer, npyfile &npy)
+/*
+ * readable_buffer - wrapper for vectors to make them a ReadableSource
+ */
+struct readable_buffer
 {
-	if constexpr (std::ranges::contiguous_range<R>) {
-		if (buffer.size() < npyfile::magic_byte_count)
-			return result::error_magic_string_invalid;
-		std::copy_n(buffer.data(), npyfile::magic_byte_count, npy.magic.begin());
-	}
-	else {
-		auto it = std::ranges::begin(buffer);
-		auto end = std::ranges::end(buffer);
-		if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npyfile::magic_byte_count))
-			return result::error_magic_string_invalid;
-		std::copy_n(it, npyfile::magic_byte_count, npy.magic.begin());
+	readable_buffer(u8_vector &data) : _data(data), _pos(0) {}
+
+	std::size_t
+	read(uint8_t *dest, std::size_t size)
+	{
+		if (_pos + size > _data.size())
+			size = _data.size() - _pos;
+		std::copy_n(_data.begin() + _pos, size, dest);
+		_pos += size;
+		return size;
 	}
 
-	if (npy.magic[0] != 0x93 ||
-		npy.magic[1] != 'N'  ||
-		npy.magic[2] != 'U'  ||
-		npy.magic[3] != 'M'  ||
-		npy.magic[4] != 'P'  ||
-		npy.magic[5] != 'Y')
+	bool
+	eof() {
+		return _pos >= _data.size();
+	}
+
+	u8_vector   _data;
+	std::size_t _pos;
+};
+
+
+/*
+ * read_magic_string - read (and validate) the magic string from a ReadableSource
+ */
+template <ReadableSource T>
+result
+read_magic_string(T &source, npyfile &npy)
+{
+	constexpr std::array<uint8_t, 6> magic = {0x93, 'N', 'U', 'M', 'P', 'Y'};
+	if (source.read(npy.magic.begin(), npyfile::magic_byte_count) != npyfile::magic_byte_count)
+		return result::error_magic_string_invalid;
+	if (!std::equal(npy.magic.begin(), npy.magic.end(), magic.begin()))
 		return result::error_magic_string_invalid;
 
 	return result::ok;
 }
 
 
-template <std::ranges::input_range R>
-requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+/*
+ * read_version - read (and validate) the version from a ReadableSource
+ */
+template <ReadableSource T>
 result
-read_version(R &&buffer, npyfile &npy)
+read_version(T &source, npyfile &npy)
 {
-	if constexpr (std::ranges::contiguous_range<R>) {
-		if (buffer.size() < npyfile::version_byte_count)
-			return result::error_file_truncated;
-		std::copy_n(buffer.data(), npyfile::version_byte_count, npy.version.begin());
-	}
-	else {
-		auto it = std::ranges::begin(buffer);
-		auto end = std::ranges::end(buffer);
-		if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npyfile::version_byte_count))
-			return result::error_file_truncated;
-		std::copy_n(it, npyfile::version_byte_count, npy.version.begin());
-	}
+	if (source.read(npy.version.data(), npyfile::version_byte_count) != npyfile::version_byte_count)
+		return result::error_file_truncated;
 
 	// currently, only 1.0 and 2.0 are supported
 	if ((npy.version[0] != 0x01 && npy.version[0] != 0x02) || (npy.version[1] != 0x00))
@@ -499,21 +530,22 @@ read_version(R &&buffer, npyfile &npy)
 }
 
 
-template <std::ranges::input_range R>
-requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+/*
+ * read_header_length - read (and validate) the header length from a ReadableSource
+ */
+template <ReadableSource T>
 result
-read_header_length(R &&buffer, npyfile &npy)
+read_header_length(T &source, npyfile &npy)
 {
-	auto it = std::ranges::begin(buffer);
-	auto end = std::ranges::end(buffer);
-	if (std::distance(it, end) != static_cast<std::ptrdiff_t>(npy.header_size_byte_count))
-		return result::error_file_truncated;
-
 	npy.header_size = 0;
+	uint8_t elem = 0;
 	size_t i = 0;
-	for (auto &elem: buffer) {
-		npy.header_size |= elem << (i * 8);
-		i++;
+
+	while (i < npy.header_size_byte_count) {
+		if (source.read(&elem, 1) != 1)
+			return result::error_file_truncated;
+		npy.header_size |= static_cast<size_t>(elem) << (i * 8);
+		++i;
 	}
 
 	// validate the length: len(magic string) + 2 + len(length) + HEADER_LEN must be divisible by 64
@@ -525,28 +557,25 @@ read_header_length(R &&buffer, npyfile &npy)
 }
 
 
-template <std::ranges::input_range R>
-requires std::same_as<std::ranges::range_value_t<R>, uint8_t>
+/*
+ * read_header - read the header from a ReadableSource
+ */
+template <ReadableSource T>
 result
-read_header(R &&buffer, npyfile &npy)
+read_header(T &source, npyfile &npy)
 {
-	auto it = std::ranges::begin(buffer);
-	auto end = std::ranges::end(buffer);
-	if (std::distance(it, end) < static_cast<std::ptrdiff_t>(npy.header_size))
+	npy.header.resize(npy.header_size);
+	if (source.read(npy.header.data(), npy.header_size) != npy.header_size)
 		return result::error_file_truncated;
-
-	// reserve memory and copy data into it
-	npy.header.reserve(npy.header_size);
-	std::copy_n(it, npy.header_size, std::back_inserter(npy.header));
-
-	// test the size
 	if (npy.header.size() < npy.header_size)
 		return result::error_header_truncated;
-
 	return result::ok;
 }
 
 
+/*
+ * parse_descr_string - turn a string from the parser result for the descirption string into a dtype
+ */
 inline result
 parse_descr_string(pyparser::parse_result *descr, dtype &dt)
 {
@@ -576,6 +605,9 @@ parse_descr_string(pyparser::parse_result *descr, dtype &dt)
 }
 
 
+/*
+ * parse_descr_list - turn a list (from a description string parse result) into a dtype
+ */
 inline result
 parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 {
@@ -646,6 +678,9 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 }
 
 
+/*
+ * parse_descr - turn a parser result into a dtype
+ */
 inline result
 parse_descr(pyparser::parse_result *descr, dtype &dt)
 {
@@ -660,6 +695,9 @@ parse_descr(pyparser::parse_result *descr, dtype &dt)
 }
 
 
+/*
+ * parse_header - parse the header string of a .npy file
+ */
 inline result
 parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 {
@@ -749,6 +787,9 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 }
 
 
+/*
+ * compute_item_size - compute the item size of a (possibly nested) dtype
+ */
 inline result
 compute_item_size(dtype &dt, u64 offset = 0)
 {
@@ -810,21 +851,22 @@ validate_data_size(const npyfile &npy, const dtype &dt)
 }
 
 
+/*
+ * compute_data_size - compute the size of the data in a ReadableSource (if possible)
+ */
+template <ReadableSource T>
 inline result
-compute_data_size(const u8_vector &buffer, ssize_t bufpos, npyfile &npy)
+compute_data_size(T &source, npyfile &npy)
 {
-	// TODO: for streaming objects, cannot get the real size  from the buffer
-	// (potentially missing seekg, tellg)
-	if (npy.streaming) {
-		// TODO: we could use the shape and item_size of the array from the
-		// header and store how much data we would expect
-		npy.data_size = 0;
-		return result::ok;
+	// TODO: implement for other things or use another approach to externalize
+	//       type detection
+	if constexpr (std::is_same_v<T, readable_buffer>) {
+		npy.data_size = source._data.size() - source._pos;
 	}
 	else {
-		npy.data_size = buffer.size() - bufpos;
-		return result::ok;
+		npy.data_size = 0;
 	}
+	return result::ok;
 }
 
 
@@ -837,14 +879,34 @@ from_stream(std::istream &)
 }
 
 
-// simple API interface -> rvalue reference to the buffer. Caller must make sure
-// that this is correct or if a copy is required.
+template <ReadableSource T>
 inline result
-from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
+process_file_header(T &source, npyfile &npy, dtype &dt, u64_vector &shape, storage_order &order)
 {
-	result res = result::ok;
+	auto res = result::ok;
 
-	// setup the npyfile struct
+	// read stuff
+	if ((res |= read_magic_string(source,  npy)    , is_error(res))) return res;
+	if ((res |= read_version(source, npy)          , is_error(res))) return res;
+	if ((res |= read_header_length(source, npy)    , is_error(res))) return res;
+	if ((res |= read_header(source, npy)           , is_error(res))) return res;
+
+	// parse + compute stuff
+	if ((res |= parse_header(npy, dt, order, shape), is_error(res))) return res;
+	if ((res |= compute_item_size(dt)              , is_error(res))) return res;
+	if ((res |= compute_data_size(source, npy)     , is_error(res))) return res;
+	if ((res |= validate_data_size(npy, dt)        , is_error(res))) return res;
+
+	return res;
+}
+
+
+inline result
+from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
+{
+	auto res = result::ok;
+
+	// setup the npyfile struct as non-streaming
 	npy.streaming = false;
 
 	// parts of the array description (will be moved into the array later)
@@ -852,40 +914,15 @@ from_buffer(u8_vector &&buf, npyfile &npy, ndarray &array)
 	u64_vector    shape;
 	storage_order order;
 
-	// the following lambda will take a 'validation function', compute the
-	// appropriate end iterator, update the buffer position, and call the
-	// function. this avoids having bufpos updates as side-effects in the
-	// validation functions, while also allowing to implement the validation
-	// functions based in ranges::input_range
-	ssize_t bufpos = 0;
-	typedef result (*fn_t)(std::ranges::subrange<std::vector<uint8_t>::iterator>&&, npyfile&);
-	auto _call = [&buf, &bufpos, &npy](fn_t fn, size_t byte_count) {
-		auto begin = buf.begin() + bufpos;
-		auto end = begin + byte_count;
-		if (end > buf.end())
-			end = buf.end();
-		auto subrange = std::ranges::subrange(begin, end);
-		bufpos += byte_count;
-		return fn(std::move(subrange), npy);
-	};
-
-	// read stuff
-	if ((res |= _call(read_magic_string,  npyfile::magic_byte_count)  , is_error(res))) return res;
-	if ((res |= _call(read_version,       npyfile::version_byte_count), is_error(res))) return res;
-	if ((res |= _call(read_header_length, npy.header_size_byte_count) , is_error(res))) return res;
-	if ((res |= _call(read_header,        npy.header_size)            , is_error(res))) return res;
-
-	// compute/parse stuff
-	if ((res |= parse_header(npy, dt, order, shape), is_error(res))) return res;
-	if ((res |= compute_item_size(dt)              , is_error(res))) return res;
-	if ((res |= compute_data_size(buf, bufpos, npy), is_error(res))) return res;
-	if ((res |= validate_data_size(npy, dt)        , is_error(res))) return res;
+	// wrap the buffer so that it becomes a ReadableSource
+	auto source = readable_buffer(buffer);
+	if ((res = process_file_header(source, npy, dt, shape, order), is_error(res))) return res;
 
 	// erase the entire header block. what's left is the raw data of the ndarray
-	buf.erase(buf.begin(), buf.begin() + npy.data_offset);
+	buffer.erase(buffer.begin(), buffer.begin() + npy.data_offset);
 
 	// build the ndarray from the data that we read by moving into it
-	array.assign(std::move(dt), std::move(shape), std::move(buf), order);
+	dest.assign(std::move(dt), std::move(shape), std::move(buffer), order);
 
 	return res;
 }
@@ -999,22 +1036,6 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 }
 
 
-template <typename T>
-concept OutputIterator = std::output_iterator<T, typename std::iterator_traits<T>::value_type>;
-
-
-template <typename T>
-concept Container = std::ranges::range<T>;
-
-
-template <typename T>
-concept NDArray = std::derived_from<T, ndarray>;
-
-template<typename F>
-concept ReadCallback = requires(F f, const dtype& dt, u8_vector item) {
-    { f(dt, std::move(item)) } -> std::same_as<void>;
-};
-
 
 inline void
 read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(u8_vector)>& callback)
@@ -1026,7 +1047,6 @@ read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(
 		// Handle read error
 	}
 }
-
 
 
 /*
@@ -1079,6 +1099,7 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 }
 
 
+/*
 template <ReadCallback Callback>
 result
 from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullptr)
@@ -1096,9 +1117,7 @@ from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullp
 
 
 }
-
-
-
+*/
 
 
 

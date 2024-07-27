@@ -215,7 +215,9 @@ example_iterator()
 	// to you.
 	//
 	//numpy::from_npy("assets/in/simple.npy",
-	//	[&](dtype, u8_subrange)
+	//	[&](dtype, u8_subrange){
+	//		// do something with the subrange item here
+	//	});
 }
 
 
