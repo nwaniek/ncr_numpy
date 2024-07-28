@@ -89,7 +89,7 @@
  * disable this behavior and use a safe variant via the vector's assign and an
  * istreambuf_iterator, set this define to false.
  */
-#define NCR_FSTREAM_UNSAFE_READ true
+#define NCR_FSTREAM_UNSAFE_READ false
 
 
 /*
@@ -1125,12 +1125,12 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	// work with and considered bad design by many developers. We'll load the
 	// file into a vector (which is not the fastest), but then working with it
 	// is reasonably simple
-#if NCR_FSTREAM_UNSAFE_READ
 	auto filesize = ncr::get_file_size(file);
 	u8_vector buf(filesize);
+#if NCR_FSTREAM_UNSAFE_READ
 	file.read(reinterpret_cast<char*>(buf.data()), filesize);
 #else
-	buf.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+	buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 #endif
 
 	// if the caller didnt pass in a preallocated object, we'll use a local one.
