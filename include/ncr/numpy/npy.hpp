@@ -89,7 +89,7 @@
  * disable this behavior and use a safe variant via the vector's assign and an
  * istreambuf_iterator, set this define to false.
  */
-#define NCR_FSTREAM_UNSAFE_READ false
+#define NCR_FSTREAM_UNSAFE_READ true
 
 
 /*
