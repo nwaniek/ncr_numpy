@@ -9,6 +9,7 @@
 #include <ncr/core/string.hpp>
 #include <ncr/core/impl/zip_libzip.hpp>
 #include <ncr/core/unicode.hpp>
+#include <ncr/core/string_conversions.hpp>
 #include <ncr/numpy.hpp>
 
 #ifndef VERSION_MAJOR
@@ -550,7 +551,7 @@ example_nested()
 	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
 	arr.map([&](const numpy::ndarray_item &item, size_t flat_index) {
 			auto &record = item.as<year_gdp_record_packed_t>();
-			std::cout << "  " << record.year << " (item index: " << arr.unravel(flat_index) << ")\n";
+			std::cout << "  " << record.year << " (item index: " << ncr::to_string(arr.unravel(flat_index)) << ")\n";
 			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c3.country_name) + ":", 10) << std::setw(10) << record.c3.gdp << " USD\n";
@@ -642,7 +643,7 @@ example_callback()
 			// format that we expect, and if not, exit early.
 			i64 value = *reinterpret_cast<i64*>(item.data());
 			auto multi_index = numpy::unravel_index(index, shape, order);
-			std::cout << "Item " << index << " [" << multi_index << "]: " << value << "\n";
+			std::cout << "Item " << index << ncr::to_string(multi_index) << value << "\n";
 			sum += value;
 
 			// we return true to let the backend know that we want to have more

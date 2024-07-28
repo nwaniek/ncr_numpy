@@ -9,10 +9,10 @@
 
 #include <memory>
 #include <ncr/core/types.hpp>
-#include <ncr/core/type_operators.hpp>
 #include <ncr/core/utils.hpp>
 #include <ncr/core/memory.hpp>
 #include <ncr/core/common.hpp>
+#include <ncr/core/string_conversions.hpp>
 
 
 namespace ncr { namespace numpy {
@@ -133,41 +133,45 @@ struct token {
 /*
  * TODO: for debugging purposes only
  */
-inline std::ostream&
-operator<<(std::ostream &os, const token::type &type)
+inline
+const char*
+to_string(const token::type &type)
 {
 	using namespace ncr;
 
 	switch (type) {
-	case token::type::string_literal:  os << "string";         return os;
-	//case token::type::dot:             os << "dot";            return os;
-	//case token::type::ellipsis:        os << "ellipsis";       return os;
-	case token::type::value_separator: os << "delimiter";      return os;
-	case token::type::left_brace:      os << "braces_left";    return os;
-	case token::type::right_brace:     os << "braces_right";   return os;
-	case token::type::left_bracket:    os << "brackets_left";  return os;
-	case token::type::right_bracket:   os << "brackets_right"; return os;
-	case token::type::left_paren:      os << "parens_left";    return os;
-	case token::type::right_paren:     os << "parens_right";   return os;
-	case token::type::kv_separator:    os << "colon";          return os;
-	case token::type::integer_literal: os << "integer";        return os;
-	case token::type::float_literal:   os << "floating_point"; return os;
-	case token::type::bool_literal:    os << "boolean";        return os;
-	case token::type::none_literal:    os << "none";           return os;
-	case token::type::unknown:         os << "unknown";        return os;
-	// TODO: maybe remove default case, it's mostly a bad idea to have one
-	default:                           os.setstate(std::ios_base::failbit);
+	case token::type::string_literal:  return "string";
+	//case token::type::dot:             return "dot";
+	//case token::type::ellipsis:        return "ellipsis";
+	case token::type::value_separator: return "delimiter";
+	case token::type::left_brace:      return "braces_left";
+	case token::type::right_brace:     return "braces_right";
+	case token::type::left_bracket:    return "brackets_left";
+	case token::type::right_bracket:   return "brackets_right";
+	case token::type::left_paren:      return "parens_left";
+	case token::type::right_paren:     return "parens_right";
+	case token::type::kv_separator:    return "colon";
+	case token::type::integer_literal: return "integer";
+	case token::type::float_literal:   return "floating_point";
+	case token::type::bool_literal:    return "boolean";
+	case token::type::none_literal:    return "none";
+	case token::type::unknown:         return "unknown";
 	}
-	return os;
+
+	return "";
 }
 
 
-inline std::ostream&
-operator<<(std::ostream &os, const token &token)
+/*
+ * TODO: for debugging purposes only
+ */
+inline
+std::string
+to_string(const token &token)
 {
-	using ncr::operator<<;
-	os << "token type: " << token.ttype << ", value: " << token.range();
-	return os;
+	std::ostringstream oss;
+	oss << "token type: " << to_string(token.ttype) << ", value: " << ncr::to_string(token.range(), " ", "", "");
+	return oss.str();
 }
 
 

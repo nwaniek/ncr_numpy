@@ -30,7 +30,6 @@
 #include <ncr/core/types.hpp>
 #include <ncr/core/bits.hpp>
 #include <ncr/core/unicode.hpp>
-#include <ncr/core/type_operators.hpp>
 
 #include "core.hpp"
 #include "dtype.hpp"
