@@ -128,6 +128,7 @@ concept ReaderCallback = requires(F f, const dtype& dt, const u64_vector &shape,
     { f(dt, shape, order, index, std::move(item)) } -> std::same_as<bool>;
 };
 
+
 template <typename T>
 concept ReadableSource = requires(T &source, uint8_t *dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
@@ -277,6 +278,7 @@ enum class result : u64 {
 	error_file_close                       = 1ul << 10,
 	error_unsupported_file_format          = 1ul << 11,
 	error_duplicate_array_name             = 1ul << 12,
+
 	error_magic_string_invalid             = 1ul << 13,
 	error_version_not_supported            = 1ul << 14,
 	error_header_invalid_length            = 1ul << 15,
@@ -284,6 +286,7 @@ enum class result : u64 {
 	error_header_parsing_error             = 1ul << 17,
 	error_header_invalid                   = 1ul << 18,
 	error_header_empty                     = 1ul << 19,
+
 	error_descr_invalid                    = 1ul << 20,
 	error_descr_invalid_type               = 1ul << 21,
 	error_descr_invalid_string             = 1ul << 22,
@@ -295,6 +298,7 @@ enum class result : u64 {
 	error_descr_list_invalid_shape         = 1ul << 28,
 	error_descr_list_invalid_shape_value   = 1ul << 29,
 	error_descr_list_subtype_not_supported = 1ul << 30,
+
 	error_fortran_order_invalid_value      = 1ul << 31,
 	error_shape_invalid_value              = 1ul << 32,
 	error_shape_invalid_shape_value        = 1ul << 33,
@@ -304,6 +308,55 @@ enum class result : u64 {
 };
 
 NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
+
+// map from error code to string for pretty printing the error code. This is a
+// bit more involved than just listing the strings, because result codes can be
+// OR-ed together, i.e. a result code might have several codes that are set.
+constexpr std::array<std::pair<result, const char*>, 38> result_strings = {{
+	{result::ok,                                    "ok"},
+
+	{result::warning_missing_descr,                 "warning_missing_descr"},
+	{result::warning_missing_fortran_order,         "warning_missing_fortran_order"},
+	{result::warning_missing_shape,                 "warning_missing_shape"},
+
+	{result::error_wrong_filetype,                  "error_wrong_filetype"},
+	{result::error_file_not_found,                  "error_file_not_found"},
+	{result::error_file_exists,                     "error_file_exists"},
+	{result::error_file_open_failed,                "error_file_open_failed"},
+	{result::error_file_truncated,                  "error_file_truncated"},
+	{result::error_file_write_failed,               "error_file_write_failed"},
+	{result::error_file_read_failed,                "error_file_read_failed"},
+	{result::error_file_close,                      "error_file_close"},
+	{result::error_unsupported_file_format,         "error_unsupported_file_format"},
+	{result::error_duplicate_array_name,            "error_duplicate_array_name"},
+
+	{result::error_magic_string_invalid,            "error_magic_string_invalid"},
+	{result::error_version_not_supported,           "error_version_not_supported"},
+	{result::error_header_invalid_length,           "error_header_invalid_length"},
+	{result::error_header_truncated,                "error_header_truncated"},
+	{result::error_header_parsing_error,            "error_header_parsing_error"},
+	{result::error_header_invalid,                  "error_header_invalid"},
+	{result::error_header_empty,                    "error_header_empty"},
+
+	{result::error_descr_invalid,                   "error_descr_invalid"},
+	{result::error_descr_invalid_type,              "error_descr_invalid_type"},
+	{result::error_descr_invalid_string,            "error_descr_invalid_string"},
+	{result::error_descr_invalid_data_size,         "error_descr_invalid_data_size"},
+	{result::error_descr_list_empty,                "error_descr_list_empty"},
+	{result::error_descr_list_invalid_type,         "error_descr_list_invalid_type"},
+	{result::error_descr_list_incomplete_value,     "error_descr_list_incomplete_value"},
+	{result::error_descr_list_invalid_value,        "error_descr_list_invalid_value"},
+	{result::error_descr_list_invalid_shape,        "error_descr_list_invalid_shape"},
+	{result::error_descr_list_invalid_shape_value,  "error_descr_list_invalid_shape_value"},
+	{result::error_descr_list_subtype_not_supported,"error_descr_list_subtype_not_supported"},
+
+	{result::error_fortran_order_invalid_value,     "error_fortran_order_invalid_value"},
+	{result::error_shape_invalid_value,             "error_shape_invalid_value"},
+	{result::error_shape_invalid_shape_value,       "error_shape_invalid_shape_value"},
+	{result::error_item_size_mismatch,              "error_item_size_mismatch"},
+	{result::error_data_size_mismatch,              "error_data_size_mismatch"},
+	{result::error_unavailable,                     "error_unavailable"}
+}};
 
 
 inline bool
@@ -317,58 +370,33 @@ is_error(result r)
 }
 
 
-inline std::ostream&
-operator<< (std::ostream &os, result result)
+/*
+ * to_string - returns a string representation of a result code
+ *
+ * Note that a result might contain not only a single code, but several codes
+ * that are set (technically by OR-ing them). As such, this function returns a
+ * string which will contain all string representations for all codes,
+ * concatenated by " | ".
+ */
+inline
+std::string
+to_string(result res)
 {
-	switch (result) {
-		case result::ok:                                     os << "ok";                                     break;
+	if (res == result::ok)
+		return result_strings[0].second;
 
-		case result::warning_missing_descr:                  os << "warning_missing_descr";                  break;
-		case result::warning_missing_fortran_order:          os << "warning_missing_fortran_order";          break;
-		case result::warning_missing_shape:                  os << "warning_missing_shape";                  break;
-
-		case result::error_wrong_filetype:                   os << "error_wrong_filetype";                   break;
-		case result::error_file_not_found:                   os << "error_file_not_found";                   break;
-		case result::error_file_exists:                      os << "error_file_exists";                      break;
-		case result::error_file_open_failed:                 os << "error_file_open_failed";                 break;
-		case result::error_file_truncated:                   os << "error_file_truncated";                   break;
-		case result::error_file_write_failed:                os << "error_file_write_failed";                break;
-		case result::error_file_read_failed:                 os << "error_file_read_failed";                 break;
-		case result::error_file_close:                       os << "error_file_close";                       break;
-		case result::error_unsupported_file_format:          os << "error_unsupported_file_format";          break;
-		case result::error_duplicate_array_name:             os << "error_duplicate_array_name";             break;
-
-		case result::error_magic_string_invalid:             os << "error_magic_string_invalid";             break;
-		case result::error_version_not_supported:            os << "error_version_not_supported";            break;
-		case result::error_header_invalid_length:            os << "error_header_invalid_length";            break;
-		case result::error_header_truncated:                 os << "error_header_truncated";                 break;
-		case result::error_header_parsing_error:             os << "error_header_parsing_error";             break;
-		case result::error_header_invalid:                   os << "error_header_invalid";                   break;
-		case result::error_header_empty:                     os << "error_header_empty";                     break;
-
-		case result::error_descr_invalid:                    os << "error_descr_invalid";                    break;
-		case result::error_descr_invalid_type:               os << "error_descr_invalid_type";               break;
-		case result::error_descr_invalid_string:             os << "error_descr_invalid_string";             break;
-		case result::error_descr_invalid_data_size:          os << "error_descr_invalid_data_size";          break;
-		case result::error_descr_list_empty:                 os << "error_descr_list_empty";                 break;
-		case result::error_descr_list_invalid_type:          os << "error_descr_list_invalid_type";          break;
-		case result::error_descr_list_incomplete_value:      os << "error_descr_list_incomplete_value";      break;
-		case result::error_descr_list_invalid_value:         os << "error_descr_list_invalid_value";         break;
-		case result::error_descr_list_invalid_shape:         os << "error_descr_list_invalid_shape";         break;
-		case result::error_descr_list_invalid_shape_value:   os << "error_descr_list_invalid_shape_value";   break;
-		case result::error_descr_list_subtype_not_supported: os << "error_descr_list_subtype_not_supported"; break;
-
-		case result::error_fortran_order_invalid_value:      os << "error_fortran_order_invalid_value";      break;
-		case result::error_shape_invalid_value:              os << "error_shape_invalid_value";              break;
-		case result::error_shape_invalid_shape_value:        os << "error_shape_invalid_shape_value";        break;
-		case result::error_item_size_mismatch:               os << "error_item_size_mismatch";               break;
-		case result::error_data_size_mismatch:               os << "error_data_size_mismatch";               break;
-		case result::error_unavailable:                      os << "error_unavailable";                      break;
-
-		// this should never happen
-		default: os.setstate(std::ios_base::failbit);
+	std::ostringstream oss;
+	bool first = true;
+	for (size_t i = 1; i < result_strings.size(); ++i) {
+		const auto& [enum_val, str] = result_strings[i];
+		if ((res & enum_val) != enum_val)
+			continue;
+		if (!first)
+			oss << " | ";
+		oss << str;
+		first = false;
 	}
-	return os;
+	return oss.str();
 }
 
 
@@ -1076,7 +1104,15 @@ read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(
 
 
 /*
- * open_npy - attempt to open an npy file
+ * open_npy - attempt to open an npy file.
+ *
+ * This function opens a file and examines the first few bytes to test if it is
+ * a zip file (e.g. used in .npz). If that's the case, it returns an error,
+ * because handling .npz files is different regarding how data is read and where
+ * it will be written to. If the file is not a zip file, this function resets
+ * the read cursor to before the first byte, and returns OK. If it later turns
+ * out that this is, in fact, not a .npy file, other functions will return
+ * errors because parsing the .npy header will (most likely) fail.
  */
 inline result
 open_npy(std::filesystem::path filepath, std::ifstream &file)

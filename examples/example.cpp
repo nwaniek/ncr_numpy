@@ -135,8 +135,10 @@ example_simple_api(size_t padwidth = 30)
 	// try to load a file that does not exist. the variant will contain an
 	// numpy::result with the error code describing what happened.
 	val = numpy::load("assets/in/does_not_exist.npy");
-	if (std::holds_alternative<numpy::result>(val))
-		std::cout << strpad("does_not_exist.npy:", padwidth) << std::get<numpy::result>(val) << "\n";
+	if (std::holds_alternative<numpy::result>(val)) {
+		auto res = std::get<numpy::result>(val);
+		std::cout << strpad("does_not_exist.npy:", padwidth) << numpy::to_string(res) << "\n";
+	}
 	else
 		std::cout << strpad("does_not_exist.npy:", padwidth) << "surprisingly, file was found o_O\n";
 	std::cout << "\n";
@@ -156,21 +158,22 @@ example_advanced_api(size_t padwidth = 30)
 	std::cout << "Advanced API\n";
 	std::cout << "------------\n";
 
-	std::cout << strpad("simple.npy:", padwidth) << numpy::from_npy("assets/in/simple.npy", arr, &npy) << "\n";
+	// in this example we try to load numpy files, and then print the result
+	// code from the call to numpy::from_npy/from_npz. Will use a lambda here to
+	// avoid some boilerplate code which is the same for all example. also clear
+	// the numpy file info "npy" within the lambda, as this should be done when
+	// re-using a npyfile
+	auto print_result = [padwidth, &npy](numpy::result res, std::string descr){
+		std::cout << strpad(descr, padwidth) << numpy::to_string(res) << "\n";
+		numpy::clear(npy);
+	};
 
-	numpy::clear(npy);
-	std::cout << strpad("simpletensor1.npy:", padwidth) << numpy::from_npy("assets/in/simpletensor1.npy", arr, &npy) << "\n";
+	print_result(numpy::from_npy("assets/in/simple.npy", arr, &npy), "simpletensor1.npy");
+	print_result(numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy), "simpletensor2.npy");
+	print_result(numpy::from_npy("assets/in/complex.npy", arr, &npy), "complex.npy");
+	print_result(numpy::from_npy("assets/in/structured.npy", arr, &npy), "structured.npy");
+	print_result(numpy::from_npz("assets/in/multiple_named.npz", npz), "multiple_named.npy");
 
-	numpy::clear(npy);
-	std::cout << strpad("simpletensor2.npy:", padwidth) << numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy) << "\n";
-
-	numpy::clear(npy);
-	std::cout << strpad("complex.npy:", padwidth) << numpy::from_npy("assets/in/complex.npy", arr, &npy) << "\n";
-
-	numpy::clear(npy);
-	std::cout << strpad("structured.npy:", padwidth) << numpy::from_npy("assets/in/structured.npy", arr, &npy) << "\n";
-
-	std::cout << strpad("multiple_named.npz:", padwidth) << numpy::from_npz("assets/in/multiple_named.npz", npz) << "\n";
 	/// accessing existing arrays
 	for (auto const& name: npz.names) {
 		auto shape = npz[name].shape();
@@ -190,8 +193,7 @@ example_advanced_api(size_t padwidth = 30)
 	// attempt to open a file that does not exist. should produce
 	// "error_file_not_found"
 	std::cout << "\n";
-	std::cout << strpad("invalid.npz:", padwidth) << numpy::from_npz("assets/in/invalid.npz", npz) << "\n";
-
+	print_result(numpy::from_npz("assets/in/invalid.npz", npz), "invalid.npz");
 	std::cout << "\n";
 }
 
@@ -205,10 +207,16 @@ example_serialization(size_t padwidth = 30)
 	std::cout << "Serialization examples: npy files\n";
 	std::cout << "---------------------------------\n";
 
+	// as in the previous example, use a lambda to reduce some of the code
+	// verbosity in the example
+	auto print_result = [padwidth](numpy::result res, std::string descr){
+		std::cout << strpad(descr, padwidth) << numpy::to_string(res) << "\n";
+	};
+
 	numpy::ndarray arr;
 	numpy::npyfile npy;
 	numpy::from_npy("assets/in/structured.npy", arr, &npy);
-	std::cout << strpad("write test:", padwidth) << numpy::save("assets/out/structured.npy", arr, true) << "\n";
+	print_result(numpy::save("assets/out/structured.npy", arr, true), "structured.npy");
 
 	std::cout << "\n";
 	std::cout << "Serialization examples: npz files\n";
@@ -216,7 +224,7 @@ example_serialization(size_t padwidth = 30)
 
 	// test npz -> load some of the files, and write them as npz.
 	numpy::ndarray arr0 = numpy::get_ndarray(numpy::load("assets/in/simple.npy"));
-	std::cout << strpad("save simple.npz:", padwidth) << numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true) << "\n";
+	print_result(numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true), "simple.npz");
 
 	// load some data that is then written to npz files
 	numpy::variant_result val;
@@ -224,13 +232,12 @@ example_serialization(size_t padwidth = 30)
 	numpy::ndarray arr2 = numpy::get_ndarray(numpy::load("assets/in/complex.npy"));
 
 	// save the arrays with names
-	std::cout << strpad("savez_named:", padwidth) << numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
-	std::cout << strpad("savez_named_compressed:", padwidth) << numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true) << "\n";
+	print_result(numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named.npy:");
+	print_result(numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named_compressed.npz:");
 
 	// save the arrays without names (creates arr_0, arr_1, ...)
-	std::cout << strpad("savez_unnamed:", padwidth) << numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true) << "\n";
-	std::cout << strpad("savez_unnamed_compressed:", padwidth) << numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true) << "\n";
-
+	print_result(numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true), "save savez_unnamed.npz");
+	print_result(numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true), "savez_unnamed_compressed.npz");
 
 	std::cout << "\n";
 	std::cout << "hexdump comparison\n";
@@ -643,7 +650,7 @@ example_callback()
 			return true;
 		})) != numpy::result::ok)
 	{
-		std::cout << "Error reading file: " << res << "\n";
+		std::cout << "Error reading file: " << numpy::to_string(res) << "\n";
 	}
 	else {
 		std::cout << "Computed sum = " << sum << " (expected sum = 435)\n";
