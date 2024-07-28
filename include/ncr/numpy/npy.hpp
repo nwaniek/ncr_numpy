@@ -83,16 +83,6 @@
 
 
 /*
- * when this is enable, then reading from a file stream will be implemented by
- * directly writing a number of bytes to an array buffer.  While this works on
- * most implementations, it is not guaranteed that a vector is contiguous. To
- * disable this behavior and use a safe variant via the vector's assign and an
- * istreambuf_iterator, set this define to false.
- */
-#define NCR_FSTREAM_UNSAFE_READ true
-
-
-/*
  * include hell
  */
 #include <filesystem>
@@ -1112,7 +1102,7 @@ open_npy(std::filesystem::path filepath, std::ifstream &file)
  * When reading a file into an ndarray, we read the file in one go into a buffer
  * and then process it.
  */
-template <NDArray NDArrayType>
+template <NDArray NDArrayType, bool unsafe_read = true>
 result
 from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
 {
@@ -1127,11 +1117,10 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	// is reasonably simple
 	auto filesize = ncr::get_file_size(file);
 	u8_vector buf(filesize);
-#if NCR_FSTREAM_UNSAFE_READ
-	file.read(reinterpret_cast<char*>(buf.data()), filesize);
-#else
-	buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-#endif
+	if constexpr (unsafe_read)
+		file.read(reinterpret_cast<char*>(buf.data()), filesize);
+	else
+		buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 
 	// if the caller didnt pass in a preallocated object, we'll use a local one.
 	// this way avoids allocating an object, as _tmp is already present on the
