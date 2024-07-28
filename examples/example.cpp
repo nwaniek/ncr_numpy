@@ -643,7 +643,8 @@ example_callback()
 			// format that we expect, and if not, exit early.
 			i64 value = *reinterpret_cast<i64*>(item.data());
 			auto multi_index = numpy::unravel_index(index, shape, order);
-			std::cout << "Item " << index << ncr::to_string(multi_index) << value << "\n";
+			// use to_string's beg and end values to add space and :
+			std::cout << "Item " << index << ncr::to_string(multi_index, ",", " [", "]: ") << value << "\n";
 			sum += value;
 
 			// we return true to let the backend know that we want to have more
