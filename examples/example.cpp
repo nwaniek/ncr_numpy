@@ -608,7 +608,7 @@ example_nested()
  * example_callback - how to use a callback when reading data
  */
 void
-example_callback()
+example_callbacks()
 {
 	// sometimes data is too big to fit into memory, or one wants to pass the
 	// data to an iterator, or it's not required to hold all data in memory, but
@@ -629,8 +629,15 @@ example_callback()
 	// elements
 	i64 sum = 0;
 	constexpr u64 max_count = 30;
-
 	numpy::result res;
+
+	//
+	// In this first example, we'll use the most detailed version of the
+	// callback, which will give you, besides the flat item index and the actual
+	// raw item data, access to the dtype, the shape, as well as the
+	// storage_order. It's up to you to cast the data into the appropriate
+	// format.
+	//
 	if ((res = numpy::from_npy("assets/in/simpletensor2.npy",
 		[&](const numpy::dtype &, const u64_vector& shape, const numpy::storage_order& order, u64 index, u8_vector item){
 			// To exit early, simply return false from within the callback.
@@ -652,11 +659,54 @@ example_callback()
 			return true;
 		})) != numpy::result::ok)
 	{
-		std::cout << "Error reading file: " << numpy::to_string(res) << "\n";
+		std::cout << "Callback Example 1, Error reading file: " << numpy::to_string(res) << "\n";
 	}
 	else {
-		std::cout << "Computed sum = " << sum << " (expected sum = 435)\n";
+		std::cout << "Callback Example 1, Computed sum = " << sum << " (expected sum = 435)\n";
 	}
+
+	//
+	// In this second example, we'll use a more direct approach and hand over a
+	// callback that expects a certain explicit type, and a flat index.
+	//
+	sum = 0;
+	if ((res = numpy::from_npy<u64>("assets/in/simpletensor2.npy",
+		[&](u64 index, u64 value){
+			if (index >= max_count)
+				return false;
+			sum += value;
+			return true;
+		})) != numpy::result::ok)
+	{
+		std::cout << "Callback Example 2, Error reading file: " << numpy::to_string(res) << "\n";
+	}
+	else {
+		std::cout << "Callback Example 2, Computed sum = " << sum << " (expected sum = 435)\n";
+	}
+
+	//
+	// In this third example, we'll tell from_numpy which type the item should
+	// have, and that we'd like to have a multi_index instead of a flat index.
+	// it'll internally unravel the index for us, so we don't need to care about
+	// dtype, shape, or order.
+	//
+	sum = 0;
+	size_t i = 0;
+	if ((res = numpy::from_npy<u64>("assets/in/simpletensor2.npy",
+		[&](u64_vector index, u64 value){
+			if (i++ >= max_count)
+				return false;
+			std::cout << "Item" << ncr::to_string(index, ",", " [", "]: ") << value << "\n";
+			sum += value;
+			return true;
+		})) != numpy::result::ok)
+	{
+		std::cout << "Callback Example 3, Error reading file: " << numpy::to_string(res) << "\n";
+	}
+	else {
+		std::cout << "Callback Example 3, Computed sum = " << sum << " (expected sum = 435)\n";
+	}
+
 }
 
 
@@ -674,7 +724,7 @@ main()
 	example_facade();        std::cout << "\n";
 	example_structured();    std::cout << "\n";
 	example_nested();        std::cout << "\n";
-	example_callback();
+	example_callbacks();
 
 
 	return 0;

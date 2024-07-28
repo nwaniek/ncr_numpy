@@ -124,9 +124,22 @@ concept NDArray = std::derived_from<T, ndarray>;
 
 
 template<typename F>
-concept ReaderCallback = requires(F f, const dtype& dt, const u64_vector &shape, const storage_order &order, u64 index, u8_vector item) {
+concept GenericReaderCallback = requires(F f, const dtype& dt, const u64_vector &shape, const storage_order &order, u64 index, u8_vector item) {
     { f(dt, shape, order, index, std::move(item)) } -> std::same_as<bool>;
 };
+
+template <typename T, typename F>
+concept TypedReaderCallbackFlat = requires(F f, u64 index, T value) {
+	{ f(index, value) } -> std::same_as<bool>;
+};
+
+template <typename T, typename F>
+concept TypedReaderCallbackMulti = requires(F f, u64_vector index, T value) {
+	{ f(std::move(index), value) } -> std::same_as<bool>;
+};
+
+template <typename T, typename F>
+concept TypedReaderCallback = TypedReaderCallbackFlat<T, F> || TypedReaderCallbackMulti<T, F>;
 
 
 template <typename T>
@@ -1131,7 +1144,6 @@ open_npy(std::filesystem::path filepath, std::ifstream &file)
 }
 
 
-
 /*
  * from_nyp - read a file into a container
  *
@@ -1174,9 +1186,9 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 }
 
 
-template <ReaderCallback Callback>
+template <typename T, typename F>
 result
-from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullptr)
+from_npy_callback(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
 {
 	// try to open the file
 	result res = result::ok;
@@ -1217,11 +1229,51 @@ from_npy(std::filesystem::path filepath, Callback callback, npyfile *npy = nullp
 				break;
 			}
 		}
-		// when the callback returns false, the user wants an early exit
-		if (!callback(dt, shape, order, i, std::move(buffer)))
-			break;
+
+		// select the right callback variant. if the callback returns false, the
+		// user wants an early exit
+		if constexpr (GenericReaderCallback<F>) {
+			if (!callback(dt, shape, order, i, std::move(buffer)))
+				break;
+		}
+		else if constexpr (TypedReaderCallbackFlat<T, F>) {
+			// when the callback returns false, the user wants an early exit
+			if (!callback(i, *reinterpret_cast<T*>(buffer.data())))
+				break;
+		}
+		else if constexpr (TypedReaderCallbackMulti<T, F>) {
+			// when the callback returns false, the user wants an early exit
+			u64_vector multi_index = unravel_index(i, shape, order);
+			if (!callback(multi_index, *reinterpret_cast<T*>(buffer.data())))
+				break;
+		}
+		else {
+			static_assert(GenericReaderCallback<F> || TypedReaderCallback<T, F>,
+						  "The provided function does not satisfy any of the required concepts.");
+		}
 	}
 	return res;
+}
+
+template <typename F> requires GenericReaderCallback<F>
+result
+from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
+{
+	return from_npy_callback<void>(
+		std::move(filepath),
+		std::forward<F>(callback),
+		npy);
+}
+
+
+template <typename T, typename F> requires TypedReaderCallback<T, F>
+result
+from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
+{
+	return from_npy_callback<T, F>(
+		std::move(filepath),
+		std::forward<F>(callback),
+		npy);
 }
 
 
