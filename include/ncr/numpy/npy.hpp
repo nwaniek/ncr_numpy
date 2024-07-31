@@ -147,8 +147,9 @@ concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vecto
 };
 
 
+// TODO: replace uint8_t* with a type-safe Writable output_range
 template <typename T>
-concept ReadableSource = requires(T &source, uint8_t *dest, std::size_t size) {
+concept Readable = requires(T &source, uint8_t *dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
 	{ source.eof() } -> std::same_as<bool>;
 	// TODO: maybe also fail()
@@ -564,7 +565,7 @@ struct ifstream_reader
 /*
  * read_magic_string - read (and validate) the magic string from a ReadableSource
  */
-template <ReadableSource T>
+template <Readable T>
 result
 read_magic_string(T &source, npyfile &npy)
 {
@@ -581,7 +582,7 @@ read_magic_string(T &source, npyfile &npy)
 /*
  * read_version - read (and validate) the version from a ReadableSource
  */
-template <ReadableSource T>
+template <Readable T>
 result
 read_version(T &source, npyfile &npy)
 {
@@ -605,7 +606,7 @@ read_version(T &source, npyfile &npy)
 /*
  * read_header_length - read (and validate) the header length from a ReadableSource
  */
-template <ReadableSource T>
+template <Readable T>
 result
 read_header_length(T &source, npyfile &npy)
 {
@@ -632,7 +633,7 @@ read_header_length(T &source, npyfile &npy)
 /*
  * read_header - read the header from a ReadableSource
  */
-template <ReadableSource T>
+template <Readable T>
 result
 read_header(T &source, npyfile &npy)
 {
@@ -926,7 +927,7 @@ validate_data_size(const npyfile &npy, const dtype &dt)
 /*
  * compute_data_size - compute the size of the data in a ReadableSource (if possible)
  */
-template <ReadableSource T>
+template <Readable T>
 inline result
 compute_data_size(T &source, npyfile &npy)
 {
@@ -951,7 +952,7 @@ from_stream(std::istream &)
 }
 
 
-template <ReadableSource T>
+template <Readable T>
 inline result
 process_file_header(T &source, npyfile &npy, dtype &dt, u64_vector &shape, storage_order &order)
 {
