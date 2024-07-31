@@ -147,14 +147,12 @@ concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vecto
 };
 
 
-// TODO: replace uint8_t* with a type-safe Writable output_range
-template <typename T>
-concept Readable = requires(T &source, uint8_t *dest, std::size_t size) {
+template <typename T, typename OutputRange>
+concept Readable = requires(T source, OutputRange &dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
 	{ source.eof() } -> std::same_as<bool>;
 	// TODO: maybe also fail()
 };
-
 
 
 /*
@@ -197,11 +195,11 @@ struct npyfile
 
 	// storage for the magic string.
 	std::array<u8, magic_byte_count>
-		magic;
+		magic                       {};
 
 	// storage for the version
 	std::array<u8, version_byte_count>
-		version;
+		version                     {};
 
 	// the numpy header which describes which data type is stored in this numpy
 	// array and how it is stored. Essentially this is a string representation
@@ -510,11 +508,26 @@ struct buffer_reader
 {
 	buffer_reader(u8_vector &data) : _data(data), _pos(0) {}
 
+	template <typename OutputRange>
+	requires std::ranges::output_range<OutputRange, u8>
 	std::size_t
-	read(uint8_t *dest, std::size_t size)
+	read(OutputRange &dest, std::size_t size)
 	{
-		if (_pos + size > _data.size())
-			size = _data.size() - _pos;
+		auto first = std::ranges::begin(dest);
+        auto last = std::ranges::end(dest);
+        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+		size = (_pos + size > _data.size()) ? _data.size() - _pos : size;
+		std::copy_n(_data.begin() + _pos, size, first);
+		_pos += size;
+		return size;
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t
+	read(T* dest, std::size_t size)
+	{
+		size = (_pos + size > _data.size()) ? _data.size() - _pos : size;
 		std::copy_n(_data.begin() + _pos, size, dest);
 		_pos += size;
 		return size;
@@ -537,13 +550,29 @@ struct ifstream_reader
 {
 	ifstream_reader(std::ifstream &stream) : _stream(stream), _eof(false), _fail(false) {}
 
+	template <typename OutputRange>
+	requires std::ranges::output_range<OutputRange, u8>
 	std::size_t
-	read(uint8_t *dest, std::size_t size)
+	read(OutputRange &dest, std::size_t size)
 	{
-		_stream.read(reinterpret_cast<char *>(dest), size);
+		auto first = std::ranges::begin(dest);
+        auto last = std::ranges::end(dest);
+        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+
+		_stream.read(reinterpret_cast<char *>(&(*first)), size);
 		_fail = _stream.fail();
 		_eof  = _stream.eof();
 		return _stream.gcount();
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t read(T* dest, std::size_t size)
+	{
+		_stream.read(reinterpret_cast<char*>(dest), size);
+		_fail = _stream.fail();
+		_eof  = _stream.eof();
+		return static_cast<std::size_t>(_stream.gcount());
 	}
 
 	bool
@@ -565,12 +594,13 @@ struct ifstream_reader
 /*
  * read_magic_string - read (and validate) the magic string from a ReadableSource
  */
-template <Readable T>
+template <typename Reader, typename OutputRange = decltype(npyfile::magic)>
+requires Readable<Reader, OutputRange>
 result
-read_magic_string(T &source, npyfile &npy)
+read_magic_string(Reader &source, npyfile &npy)
 {
 	constexpr std::array<uint8_t, 6> magic = {0x93, 'N', 'U', 'M', 'P', 'Y'};
-	if (source.read(npy.magic.begin(), npyfile::magic_byte_count) != npyfile::magic_byte_count)
+	if (source.read(npy.magic, npyfile::magic_byte_count) != npyfile::magic_byte_count)
 		return result::error_magic_string_invalid;
 	if (!std::equal(npy.magic.begin(), npy.magic.end(), magic.begin()))
 		return result::error_magic_string_invalid;
@@ -582,18 +612,19 @@ read_magic_string(T &source, npyfile &npy)
 /*
  * read_version - read (and validate) the version from a ReadableSource
  */
-template <Readable T>
+template <typename Reader, typename OutputRange = decltype(npyfile::version)>
+requires Readable<Reader, OutputRange>
 result
-read_version(T &source, npyfile &npy)
+read_version(Reader &source, npyfile &npy)
 {
-	if (source.read(npy.version.data(), npyfile::version_byte_count) != npyfile::version_byte_count)
+	if (source.read(npy.version, npyfile::version_byte_count) != npyfile::version_byte_count)
 		return result::error_file_truncated;
 
 	// currently, only 1.0 and 2.0 are supported
 	if ((npy.version[0] != 0x01 && npy.version[0] != 0x02) || (npy.version[1] != 0x00))
 		return result::error_version_not_supported;
 
-	// set the size byte count (which depends on the version)
+	// set the size byte count, which depends on the version
 	if (npy.version[0] == 0x01)
 		npy.header_size_byte_count = 2;
 	else
@@ -606,20 +637,31 @@ read_version(T &source, npyfile &npy)
 /*
  * read_header_length - read (and validate) the header length from a ReadableSource
  */
-template <Readable T>
+template <typename Reader, typename OutputRange = std::array<u8,4>>
+requires Readable<Reader, OutputRange>
 result
-read_header_length(T &source, npyfile &npy)
+read_header_length(Reader &source, npyfile &npy)
 {
 	npy.header_size = 0;
+
+	// read bytes and convert bytes to size_t
 	uint8_t elem = 0;
 	size_t i = 0;
-
 	while (i < npy.header_size_byte_count) {
 		if (source.read(&elem, 1) != 1)
 			return result::error_file_truncated;
 		npy.header_size |= static_cast<size_t>(elem) << (i * 8);
 		++i;
 	}
+	/*
+	 * Note: the above could be replaced with the following that reads all
+	 * header bytes into an std::array<u8, 4>. Still undecided which is better
+	 */
+	// if (source.read(npy.header_size_bytes, npy.header_size_byte_count) != npy.header_size_byte_count)
+	// 	return result::error_file_truncated;
+	// for (size_t i = 0; i < npy.header_size_byte_count; i++)
+	// 	npy.header_size |= static_cast<size_t>(npy.header_size_bytes[i]) << (i * 8);
+
 
 	// validate the length: len(magic string) + 2 + len(length) + HEADER_LEN must be divisible by 64
 	npy.data_offset = npyfile::magic_byte_count + npy.version_byte_count + npy.header_size_byte_count + npy.header_size;
@@ -633,12 +675,13 @@ read_header_length(T &source, npyfile &npy)
 /*
  * read_header - read the header from a ReadableSource
  */
-template <Readable T>
+template <typename Reader, typename OutputRange = decltype(npyfile::header)>
+requires Readable<Reader, OutputRange>
 result
-read_header(T &source, npyfile &npy)
+read_header(Reader &source, npyfile &npy)
 {
 	npy.header.resize(npy.header_size);
-	if (source.read(npy.header.data(), npy.header_size) != npy.header_size)
+	if (source.read(npy.header, npy.header_size) != npy.header_size)
 		return result::error_file_truncated;
 	if (npy.header.size() < npy.header_size)
 		return result::error_header_truncated;
@@ -927,13 +970,13 @@ validate_data_size(const npyfile &npy, const dtype &dt)
 /*
  * compute_data_size - compute the size of the data in a ReadableSource (if possible)
  */
-template <Readable T>
+template <typename Reader>
 inline result
-compute_data_size(T &source, npyfile &npy)
+compute_data_size(Reader &source, npyfile &npy)
 {
 	// TODO: implement for other things or use another approach to externalize
 	//       type detection
-	if constexpr (std::is_same_v<T, buffer_reader>) {
+	if constexpr (std::is_same_v<Reader, buffer_reader>) {
 		npy.data_size = source._data.size() - source._pos;
 	}
 	else {
@@ -952,9 +995,10 @@ from_stream(std::istream &)
 }
 
 
-template <Readable T>
+template <typename Reader>
+// requires Readable<Reader, OutputRange>
 inline result
-process_file_header(T &source, npyfile &npy, dtype &dt, u64_vector &shape, storage_order &order)
+process_file_header(Reader &source, npyfile &npy, dtype &dt, u64_vector &shape, storage_order &order)
 {
 	auto res = result::ok;
 
@@ -1221,7 +1265,7 @@ from_npy_callback(std::filesystem::path filepath, G array_properties_callback, F
 	// until we hit eof
 	for (u64 i = 0;; ++i) {
 		u8_vector buffer(dt.item_size, 0);
-		size_t bytes_read = source.read(buffer.data(), dt.item_size);
+		size_t bytes_read = source.read(buffer, dt.item_size);
 		if (bytes_read != dt.item_size) {
 			// EOF -> nothing more to read, w'ere in a good state
 			if (bytes_read == 0 && source.eof())
@@ -1449,7 +1493,7 @@ save(std::filesystem::path filepath, const ndarray &arr, bool overwrite=false)
 struct savez_arg
 {
 	std::string name;
-	ndarray     &array;
+	ndarray&    array;
 };
 
 
