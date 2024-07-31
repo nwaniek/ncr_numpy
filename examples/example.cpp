@@ -20,8 +20,12 @@
 #define VERSION_MINOR 0
 #endif
 
+#ifndef VERSION_REVISION
+#define VERSION_REVISION 0
+#endif
+
 #ifndef VERSION
-#define VERSION "0.0"
+#define VERSION "0.0.0"
 #endif
 
 
@@ -707,6 +711,40 @@ example_callbacks()
 		std::cout << "Callback Example 3, Computed sum = " << sum << " (expected sum = 435)\n";
 	}
 
+
+	//
+	// In this fourth example, we'll use yet another form of from_npy, which
+	// allows to pass in two separate callbacks. the first will be passed in
+	// array properties, meaning its dtype, shape, and order, while the second
+	// callback is one from the previous two examples, meaning either a callback
+	// for a flat index, or for a multi-index.
+	//
+	sum = 0;
+	i = 0;
+	if ((res = numpy::from_npy<u64>("assets/in/simpletensor2.npy",
+		[&](const numpy::dtype &dt, const u64_vector& shape, const numpy::storage_order& order){
+			// This callback will be invoked first, so it is possible to use it
+			// to setup other data, or emit information, or exit early if the
+			// shape or contained data type is not what was expected.
+			std::cout << "Array example 4, Array Properties: item size = " << dt.item_size << ", shape = " << ncr::to_string(shape) << ", storage order = " << order << "\n";
+
+			// as with the other callbacks, we indicate by return value if
+			// processing shall continue or not with a boolean return value
+			return true;
+		},
+		[&](u64_vector index, u64 value){
+			if (i++ >= max_count)
+				return false;
+			std::cout << "Item" << ncr::to_string(index, ",", " [", "]: ") << value << "\n";
+			sum += value;
+			return true;
+		})) != numpy::result::ok)
+	{
+		std::cout << "Callback Example 4, Error reading file: " << numpy::to_string(res) << "\n";
+	}
+	else {
+		std::cout << "Callback Example 4, Computed sum = " << sum << " (expected sum = 435)\n";
+	}
 }
 
 

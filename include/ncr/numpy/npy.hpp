@@ -141,6 +141,11 @@ concept TypedReaderCallbackMulti = requires(F f, u64_vector index, T value) {
 template <typename T, typename F>
 concept TypedReaderCallback = TypedReaderCallbackFlat<T, F> || TypedReaderCallbackMulti<T, F>;
 
+template <typename F>
+concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vector &shape, const storage_order &order) {
+	{ f(dt, shape, order) } -> std::same_as<bool>;
+};
+
 
 template <typename T>
 concept ReadableSource = requires(T &source, uint8_t *dest, std::size_t size) {
@@ -1186,9 +1191,9 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 }
 
 
-template <typename T, typename F>
+template <typename T, typename F, typename G>
 result
-from_npy_callback(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
+from_npy_callback(std::filesystem::path filepath, G array_properties_callback, F data_callback, npyfile *npy = nullptr)
 {
 	// try to open the file
 	result res = result::ok;
@@ -1199,11 +1204,17 @@ from_npy_callback(std::filesystem::path filepath, F callback, npyfile *npy = nul
 	npyfile _tmp;
 	npyfile *npy_ptr = npy ? npy : &_tmp;
 
+	// process the file header and extract properties of the array
 	dtype         dt;
 	u64_vector    shape;
 	storage_order order;
 	auto source = ifstream_reader(file);
 	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) return res;
+	if constexpr (ArrayPropertiesCallback<G>) {
+		bool cb_result = array_properties_callback(dt, shape, order);
+		if (!cb_result)
+			return res;
+	}
 
 	// at this point we know the item size, and can read items from the file
 	// until we hit eof
@@ -1233,18 +1244,18 @@ from_npy_callback(std::filesystem::path filepath, F callback, npyfile *npy = nul
 		// select the right callback variant. if the callback returns false, the
 		// user wants an early exit
 		if constexpr (GenericReaderCallback<F>) {
-			if (!callback(dt, shape, order, i, std::move(buffer)))
+			if (!data_callback(dt, shape, order, i, std::move(buffer)))
 				break;
 		}
 		else if constexpr (TypedReaderCallbackFlat<T, F>) {
 			// when the callback returns false, the user wants an early exit
-			if (!callback(i, *reinterpret_cast<T*>(buffer.data())))
+			if (!data_callback(i, *reinterpret_cast<T*>(buffer.data())))
 				break;
 		}
 		else if constexpr (TypedReaderCallbackMulti<T, F>) {
 			// when the callback returns false, the user wants an early exit
 			u64_vector multi_index = unravel_index(i, shape, order);
-			if (!callback(multi_index, *reinterpret_cast<T*>(buffer.data())))
+			if (!data_callback(multi_index, *reinterpret_cast<T*>(buffer.data())))
 				break;
 		}
 		else {
@@ -1261,6 +1272,7 @@ from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
 {
 	return from_npy_callback<void>(
 		std::move(filepath),
+		nullptr,
 		std::forward<F>(callback),
 		npy);
 }
@@ -1272,9 +1284,25 @@ from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
 {
 	return from_npy_callback<T, F>(
 		std::move(filepath),
+		nullptr,
 		std::forward<F>(callback),
 		npy);
 }
+
+
+template <typename T, typename G, typename F>
+requires ArrayPropertiesCallback<G> && TypedReaderCallback<T, F>
+result
+from_npy(std::filesystem::path filepath, G array_properties_callback, F data_callback, npyfile *npy = nullptr)
+{
+	return from_npy_callback<T, F, G>(
+		std::move(filepath),
+		std::forward<G>(array_properties_callback),
+		std::forward<F>(data_callback),
+		npy);
+}
+
+
 
 
 //
