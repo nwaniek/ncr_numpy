@@ -122,7 +122,6 @@ typedef std::variant<result, ndarray, npzfile> variant_result;
 template <typename T>
 concept NDArray = std::derived_from<T, ndarray>;
 
-
 template<typename F>
 concept GenericReaderCallback = requires(F f, const dtype& dt, const u64_vector &shape, const storage_order &order, u64 index, u8_vector item) {
     { f(dt, shape, order, index, std::move(item)) } -> std::same_as<bool>;
@@ -146,6 +145,8 @@ concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vecto
 	{ f(dt, shape, order) } -> std::same_as<bool>;
 };
 
+template <typename Range, typename Tp>
+concept Writable = std::ranges::output_range<Range, Tp>;
 
 template <typename T, typename OutputRange>
 concept Readable = requires(T source, OutputRange &dest, std::size_t size) {
@@ -444,74 +445,15 @@ operator<<(std::ostream &os, const byte_order &order)
 
 
 /*
- * istream interface is currently not directly supported because we read the
- * file in one go. Nevertheless, the functions below are kept as a starting
- * point for implementing streaming data
- */
-#if 0
-inline result
-read_magic_string(std::istream &is, npy_file &finfo)
-{
-	// numpy file header begins with \x93NUMPY
-	is.read((char*)finfo.magic, finfo.magic_byte_count);
-	if (is.fail() && is.eof())
-		return result::error_file_truncated;
-	return result::ok;
-}
-
-
-inline result
-read_version(std::istream &is, npy_file &finfo)
-{
-	// 2 bytes: major / minor version
-	is.read((char*)finfo.version, finfo.version_byte_count);
-	if (is.fail() && is.eof())
-		return result::error_file_truncated;
-	return result::ok;
-}
-
-
-inline result
-read_header_length(std::istream &is, npy_file &finfo)
-{
-	// attempt to read the header length
-	u8 buffer[4] = {};
-	is.read((char*)buffer, finfo.size_byte_count);
-	if (is.fail() && is.eof())
-		return result::error_file_truncated;
-
-	finfo.header_byte_count = buffer[0] | (buffer[1] << 8) | (buffer[2] << 16) | (buffer[3] << 24);
-	return result::ok;
-}
-
-
-inline result
-read_header(std::istream &is, npy_file &finfo)
-{
-	// read the stream header into the buffer
-
-	// read and parse the header
-	finfo.header.resize(finfo.header_byte_count);
-	is.read((char*)finfo.header.data(), finfo.header_byte_count);
-	if (is.fail() && is.eof())
-		return result::error_header_truncated;
-
-	return result::ok;
-}
-#endif
-
-
-/*
  * buffer_read - wrapper for vectors/buffers to make them a ReadableSource
  */
 struct buffer_reader
 {
 	buffer_reader(u8_vector &data) : _data(data), _pos(0) {}
 
-	template <typename OutputRange>
-	requires std::ranges::output_range<OutputRange, u8>
+	template <Writable<u8> D>
 	std::size_t
-	read(OutputRange &dest, std::size_t size)
+	read(D &dest, std::size_t size)
 	{
 		auto first = std::ranges::begin(dest);
         auto last = std::ranges::end(dest);
@@ -550,14 +492,13 @@ struct ifstream_reader
 {
 	ifstream_reader(std::ifstream &stream) : _stream(stream), _eof(false), _fail(false) {}
 
-	template <typename OutputRange>
-	requires std::ranges::output_range<OutputRange, u8>
+	template <Writable<u8> D>
 	std::size_t
-	read(OutputRange &dest, std::size_t size)
+	read(D &dest, std::size_t size)
 	{
 		auto first = std::ranges::begin(dest);
-        auto last = std::ranges::end(dest);
-        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+		auto last = std::ranges::end(dest);
+		size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
 
 		_stream.read(reinterpret_cast<char *>(&(*first)), size);
 		_fail = _stream.fail();
@@ -567,7 +508,8 @@ struct ifstream_reader
 
 	template <typename T>
 	requires std::same_as<T, u8>
-	std::size_t read(T* dest, std::size_t size)
+	std::size_t
+	read(T* dest, std::size_t size)
 	{
 		_stream.read(reinterpret_cast<char*>(dest), size);
 		_fail = _stream.fail();
@@ -637,7 +579,7 @@ read_version(Reader &source, npyfile &npy)
 /*
  * read_header_length - read (and validate) the header length from a ReadableSource
  */
-template <typename Reader, typename OutputRange = std::array<u8,4>>
+template <typename Reader, typename OutputRange = std::array<u8, 4>>
 requires Readable<Reader, OutputRange>
 result
 read_header_length(Reader &source, npyfile &npy)
@@ -653,6 +595,7 @@ read_header_length(Reader &source, npyfile &npy)
 		npy.header_size |= static_cast<size_t>(elem) << (i * 8);
 		++i;
 	}
+
 	/*
 	 * Note: the above could be replaced with the following that reads all
 	 * header bytes into an std::array<u8, 4>. Still undecided which is better
