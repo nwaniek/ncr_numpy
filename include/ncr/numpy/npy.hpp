@@ -536,8 +536,8 @@ struct ifstream_reader
 /*
  * read_magic_string - read (and validate) the magic string from a ReadableSource
  */
-template <typename Reader, typename OutputRange = decltype(npyfile::magic)>
-requires Readable<Reader, OutputRange>
+template <typename Reader>
+requires Readable<Reader, decltype(npyfile::magic)>
 result
 read_magic_string(Reader &source, npyfile &npy)
 {
@@ -554,8 +554,8 @@ read_magic_string(Reader &source, npyfile &npy)
 /*
  * read_version - read (and validate) the version from a ReadableSource
  */
-template <typename Reader, typename OutputRange = decltype(npyfile::version)>
-requires Readable<Reader, OutputRange>
+template <typename Reader>
+requires Readable<Reader, decltype(npyfile::version)>
 result
 read_version(Reader &source, npyfile &npy)
 {
@@ -579,15 +579,15 @@ read_version(Reader &source, npyfile &npy)
 /*
  * read_header_length - read (and validate) the header length from a ReadableSource
  */
-template <typename Reader, typename OutputRange = std::array<u8, 4>>
-requires Readable<Reader, OutputRange>
+template <typename Reader>
+requires Readable<Reader, u8*>
 result
 read_header_length(Reader &source, npyfile &npy)
 {
 	npy.header_size = 0;
 
 	// read bytes and convert bytes to size_t
-	uint8_t elem = 0;
+	u8 elem = 0;
 	size_t i = 0;
 	while (i < npy.header_size_byte_count) {
 		if (source.read(&elem, 1) != 1)
@@ -618,8 +618,8 @@ read_header_length(Reader &source, npyfile &npy)
 /*
  * read_header - read the header from a ReadableSource
  */
-template <typename Reader, typename OutputRange = decltype(npyfile::header)>
-requires Readable<Reader, OutputRange>
+template <typename Reader>
+requires Readable<Reader, decltype(npyfile::header)>
 result
 read_header(Reader &source, npyfile &npy)
 {
