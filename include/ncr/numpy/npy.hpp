@@ -149,7 +149,7 @@ template <typename Range, typename Tp>
 concept Writable = std::ranges::output_range<Range, Tp>;
 
 template <typename T, typename OutputRange>
-concept Readable = requires(T source, OutputRange &dest, std::size_t size) {
+concept Readable = requires(T source, OutputRange &&dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
 	{ source.eof() } -> std::same_as<bool>;
 	// TODO: maybe also fail()
@@ -491,7 +491,7 @@ struct ifstream_reader
 
 	template <Writable<u8> D>
 	std::size_t
-	read(D &dest, std::size_t size)
+	read(D &&dest, std::size_t size)
 	{
 		auto first = std::ranges::begin(dest);
 		auto last = std::ranges::end(dest);
@@ -508,10 +508,7 @@ struct ifstream_reader
 	std::size_t
 	read(T* dest, std::size_t size)
 	{
-		_stream.read(reinterpret_cast<char*>(dest), size);
-		_fail = _stream.fail();
-		_eof  = _stream.eof();
-		return static_cast<std::size_t>(_stream.gcount());
+		return read(std::span(dest, size), size);
 	}
 
 	bool
