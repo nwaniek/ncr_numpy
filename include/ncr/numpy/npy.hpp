@@ -453,7 +453,7 @@ struct buffer_reader
 
 	template <Writable<u8> D>
 	std::size_t
-	read(D &dest, std::size_t size)
+	read(D &&dest, std::size_t size)
 	{
 		auto first = std::ranges::begin(dest);
         auto last = std::ranges::end(dest);
@@ -469,10 +469,7 @@ struct buffer_reader
 	std::size_t
 	read(T* dest, std::size_t size)
 	{
-		size = (_pos + size > _data.size()) ? _data.size() - _pos : size;
-		std::copy_n(_data.begin() + _pos, size, dest);
-		_pos += size;
-		return size;
+		return read(std::span<T>(dest, size), size);
 	}
 
 	bool
@@ -503,7 +500,7 @@ struct ifstream_reader
 		_stream.read(reinterpret_cast<char *>(&(*first)), size);
 		_fail = _stream.fail();
 		_eof  = _stream.eof();
-		return _stream.gcount();
+		return static_cast<std::size_t>(_stream.gcount());
 	}
 
 	template <typename T>
