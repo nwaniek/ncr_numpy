@@ -472,8 +472,8 @@ struct buffer_reader
 		return read(std::span<T>(dest, size), size);
 	}
 
-	bool
-	eof() {
+	inline bool
+	eof() noexcept {
 		return _pos >= _data.size();
 	}
 
@@ -511,13 +511,13 @@ struct ifstream_reader
 		return read(std::span(dest, size), size);
 	}
 
-	bool
-	eof() {
+	inline bool
+	eof() noexcept {
 		return _eof;
 	}
 
-	bool
-	fail() {
+	inline bool
+	fail() noexcept {
 		return _fail;
 	}
 
