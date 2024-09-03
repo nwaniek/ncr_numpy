@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <cstddef>      // size_t
 #include <type_traits>
 
 namespace ncr {
@@ -24,6 +25,7 @@ to_underlying(E e) noexcept {
 	return static_cast<typename std::underlying_type<E>::type>(e);
 }
 
+} // ncr::
 
 /*
  * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
@@ -33,14 +35,16 @@ to_underlying(E e) noexcept {
  * With the macro below, this will be possible.
  */
 #define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
-	inline ENUM_T operator~(ENUM_T a) { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
-	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
-	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); }
+	inline ENUM_T operator~(ENUM_T a) { return static_cast<ENUM_T>(~::ncr::to_underlying(a)); } \
+	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(::ncr::to_underlying(a) | ::ncr::to_underlying(b)); } \
+	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(::ncr::to_underlying(a) & ::ncr::to_underlying(b)); } \
+	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(::ncr::to_underlying(a) ^ ::ncr::to_underlying(b)); } \
+	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(::ncr::to_underlying(a) | ::ncr::to_underlying(b)); } \
+	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(::ncr::to_underlying(a) & ::ncr::to_underlying(b)); } \
+	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(::ncr::to_underlying(a) ^ ::ncr::to_underlying(b)); }
 
+
+namespace ncr {
 
 /*
  * NCR_DEFINE_FUNCTION_ALIAS - define a function alias for another function
@@ -125,6 +129,8 @@ to_underlying(E e) noexcept {
 template <std::size_t N, class T>
 constexpr std::size_t len(T(&)[N]) { return N; }
 
+} // ncr::
+
 
 /*
  * Count the number of arguments to a variadic macro. Up to 64 arguments are
@@ -153,4 +159,13 @@ constexpr std::size_t len(T(&)[N]) { return N; }
 #define NCR_UNUSED_INDIRECT2(N, ...)  NCR_UNUSED_INDIRECT3(N, __VA_ARGS__)
 #define NCR_UNUSED(...)               NCR_UNUSED_INDIRECT2(NCR_COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
-} // ncr::
+
+
+/*
+ * macro to define an enum class of a specific underlying type, and also
+ * generating a template specialization that returns the number of values in the
+ * enum class.
+ */
+#define NCR_ENUM_CLASS(EnumName, UnderlyingType, ...) \
+	enum class EnumName : UnderlyingType { __VA_ARGS__ }; \
+	inline constexpr size_t enum_count_ ## EnumName = NCR_COUNT_ARGS(__VA_ARGS__);

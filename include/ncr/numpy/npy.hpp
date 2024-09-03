@@ -100,6 +100,7 @@
 #include <ncr/core/bits.hpp>
 #include <ncr/core/zip.hpp>
 #include <ncr/core/filesystem.hpp>
+#include <ncr/core/common.hpp>
 #include "pyparser.hpp"
 #include "ndarray.hpp"
 
@@ -275,62 +276,63 @@ clear(npzfile &npz)
 }
 
 
-enum class result : u64 {
-	// everything OK
-	ok                                     = 0,
-	// warnings about missing fields. Note that not all fields are required
-	// and it might not be a problem for an application if they are not present.
-	// However, inform the user about this state
-	warning_missing_descr                  = 1ul << 0,
-	warning_missing_fortran_order          = 1ul << 1,
-	warning_missing_shape                  = 1ul << 2,
-	// error codes. in particular for nested/structured arrays, it might be
-	// helpful to know precisely what went wrong.
-	error_wrong_filetype                   = 1ul << 3,
-	error_file_not_found                   = 1ul << 4,
-	error_file_exists                      = 1ul << 5,
-	error_file_open_failed                 = 1ul << 6,
-	error_file_truncated                   = 1ul << 7,
-	error_file_write_failed                = 1ul << 8,
-	error_file_read_failed                 = 1ul << 9,
-	error_file_close                       = 1ul << 10,
-	error_unsupported_file_format          = 1ul << 11,
-	error_duplicate_array_name             = 1ul << 12,
+NCR_ENUM_CLASS(
+	result, u64,
+		// everything OK
+		ok                                     = 0,
+		// warnings about missing fields. Note that not all fields are required
+		// and it might not be a problem for an application if they are not present.
+		// However, inform the user about this state
+		warning_missing_descr                  = 1ul << 0,
+		warning_missing_fortran_order          = 1ul << 1,
+		warning_missing_shape                  = 1ul << 2,
+		// error codes. in particular for nested/structured arrays, it might be
+		// helpful to know precisely what went wrong.
+		error_wrong_filetype                   = 1ul << 3,
+		error_file_not_found                   = 1ul << 4,
+		error_file_exists                      = 1ul << 5,
+		error_file_open_failed                 = 1ul << 6,
+		error_file_truncated                   = 1ul << 7,
+		error_file_write_failed                = 1ul << 8,
+		error_file_read_failed                 = 1ul << 9,
+		error_file_close                       = 1ul << 10,
+		error_unsupported_file_format          = 1ul << 11,
+		error_duplicate_array_name             = 1ul << 12,
 
-	error_magic_string_invalid             = 1ul << 13,
-	error_version_not_supported            = 1ul << 14,
-	error_header_invalid_length            = 1ul << 15,
-	error_header_truncated                 = 1ul << 16,
-	error_header_parsing_error             = 1ul << 17,
-	error_header_invalid                   = 1ul << 18,
-	error_header_empty                     = 1ul << 19,
+		error_magic_string_invalid             = 1ul << 13,
+		error_version_not_supported            = 1ul << 14,
+		error_header_invalid_length            = 1ul << 15,
+		error_header_truncated                 = 1ul << 16,
+		error_header_parsing_error             = 1ul << 17,
+		error_header_invalid                   = 1ul << 18,
+		error_header_empty                     = 1ul << 19,
 
-	error_descr_invalid                    = 1ul << 20,
-	error_descr_invalid_type               = 1ul << 21,
-	error_descr_invalid_string             = 1ul << 22,
-	error_descr_invalid_data_size          = 1ul << 23,
-	error_descr_list_empty                 = 1ul << 24,
-	error_descr_list_invalid_type          = 1ul << 25,
-	error_descr_list_incomplete_value      = 1ul << 26,
-	error_descr_list_invalid_value         = 1ul << 27,
-	error_descr_list_invalid_shape         = 1ul << 28,
-	error_descr_list_invalid_shape_value   = 1ul << 29,
-	error_descr_list_subtype_not_supported = 1ul << 30,
+		error_descr_invalid                    = 1ul << 20,
+		error_descr_invalid_type               = 1ul << 21,
+		error_descr_invalid_string             = 1ul << 22,
+		error_descr_invalid_data_size          = 1ul << 23,
+		error_descr_list_empty                 = 1ul << 24,
+		error_descr_list_invalid_type          = 1ul << 25,
+		error_descr_list_incomplete_value      = 1ul << 26,
+		error_descr_list_invalid_value         = 1ul << 27,
+		error_descr_list_invalid_shape         = 1ul << 28,
+		error_descr_list_invalid_shape_value   = 1ul << 29,
+		error_descr_list_subtype_not_supported = 1ul << 30,
 
-	error_fortran_order_invalid_value      = 1ul << 31,
-	error_shape_invalid_value              = 1ul << 32,
-	error_shape_invalid_shape_value        = 1ul << 33,
-	error_item_size_mismatch               = 1ul << 34,
-	error_data_size_mismatch               = 1ul << 35,
-	error_unavailable                      = 1ul << 36,
-};
+		error_fortran_order_invalid_value      = 1ul << 31,
+		error_shape_invalid_value              = 1ul << 32,
+		error_shape_invalid_shape_value        = 1ul << 33,
+		error_item_size_mismatch               = 1ul << 34,
+		error_data_size_mismatch               = 1ul << 35,
+		error_unavailable                      = 1ul << 36,
+	)
 
 NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
 
 // map from error code to string for pretty printing the error code. This is a
 // bit more involved than just listing the strings, because result codes can be
 // OR-ed together, i.e. a result code might have several codes that are set.
-constexpr std::array<std::pair<result, const char*>, 38> result_strings = {{
+constexpr std::array<std::pair<result, const char*>, enum_count_result> result_strings = {{
 	{result::ok,                                    "ok"},
 
 	{result::warning_missing_descr,                 "warning_missing_descr"},

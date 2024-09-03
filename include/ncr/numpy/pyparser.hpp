@@ -14,7 +14,6 @@
 #include <ncr/core/common.hpp>
 #include <ncr/core/string_conversions.hpp>
 
-
 namespace ncr { namespace numpy {
 
 
@@ -32,13 +31,9 @@ equals(u8_const_iterator first, u8_const_iterator last, const std::string_view &
 }
 
 
-/*
- * token - representes a token read from an input vector
- */
-struct token {
-
-	// basic types
-	enum class type : u8 {
+// basic types
+NCR_ENUM_CLASS(
+	token_type, u8,
 		unknown,
 		// punctuations / separators
 		// dot,            // XXX: currently not handled explicitly
@@ -61,10 +56,15 @@ struct token {
 		// identifier,     // XXX: currently not supported
 		// keyword,        // XXX: currently not supported
 		// operator,       // XXX: currently not supported
-	};
+	)
 
+
+/*
+ * token - representes a token read from an input vector
+ */
+struct token {
 	// the type of this token
-	type ttype = type::unknown;
+	token_type ttype = token_type::unknown;
 
 	// explicitly store the iterators for this token relative to the input data.
 	// this makes debugging and data extraction slightly easier
@@ -87,8 +87,8 @@ struct token {
 	 * mapping of a punctuation symbol to its type
 	 */
 	struct punctuation {
-		const u8 sym            = 0;
-		const token::type ptype = token::type::unknown;
+		const u8 sym           = 0;
+		const token_type ptype = token_type::unknown;
 	};
 
 	/*
@@ -96,32 +96,32 @@ struct token {
 	 */
 	static constexpr punctuation punctuations[] = {
 		// TODO: dot and ellipsis
-		{'{', token::type::left_brace},
-		{'}', token::type::right_brace},
-		{'[', token::type::left_bracket},
-		{']', token::type::right_bracket},
-		{'(', token::type::left_paren},
-		{')', token::type::right_paren},
-		{':', token::type::kv_separator},
-		{',', token::type::value_separator},
+		{'{', token_type::left_brace},
+		{'}', token_type::right_brace},
+		{'[', token_type::left_bracket},
+		{']', token_type::right_bracket},
+		{'(', token_type::left_paren},
+		{')', token_type::right_paren},
+		{':', token_type::kv_separator},
+		{',', token_type::value_separator},
 	};
 
 	/*
 	 * list of all literals
 	 */
-	static constexpr token::type literals[] = {
-		token::type::string_literal,
-		token::type::integer_literal,
-		token::type::float_literal,
-		token::type::bool_literal,
-		token::type::none_literal,
+	static constexpr token_type literals[] = {
+		token_type::string_literal,
+		token_type::integer_literal,
+		token_type::float_literal,
+		token_type::bool_literal,
+		token_type::none_literal,
 	};
 
 	/*
 	 * is_literal - evaluate if the token type is literal
 	 */
 	static constexpr bool
-	is_literal(const token::type &t) {
+	is_literal(const token_type &t) {
 		for (auto &l: literals)
 			if (l == t) return true;
 		return false;
@@ -135,27 +135,27 @@ struct token {
  */
 inline
 const char*
-to_string(const token::type &type)
+to_string(const token_type &type)
 {
 	using namespace ncr;
 
 	switch (type) {
-	case token::type::string_literal:  return "string";
+	case token_type::string_literal:  return "string";
 	//case token::type::dot:             return "dot";
 	//case token::type::ellipsis:        return "ellipsis";
-	case token::type::value_separator: return "delimiter";
-	case token::type::left_brace:      return "braces_left";
-	case token::type::right_brace:     return "braces_right";
-	case token::type::left_bracket:    return "brackets_left";
-	case token::type::right_bracket:   return "brackets_right";
-	case token::type::left_paren:      return "parens_left";
-	case token::type::right_paren:     return "parens_right";
-	case token::type::kv_separator:    return "colon";
-	case token::type::integer_literal: return "integer";
-	case token::type::float_literal:   return "floating_point";
-	case token::type::bool_literal:    return "boolean";
-	case token::type::none_literal:    return "none";
-	case token::type::unknown:         return "unknown";
+	case token_type::value_separator: return "delimiter";
+	case token_type::left_brace:      return "braces_left";
+	case token_type::right_brace:     return "braces_right";
+	case token_type::left_bracket:    return "brackets_left";
+	case token_type::right_bracket:   return "brackets_right";
+	case token_type::left_paren:      return "parens_left";
+	case token_type::right_paren:     return "parens_right";
+	case token_type::kv_separator:    return "colon";
+	case token_type::integer_literal: return "integer";
+	case token_type::float_literal:   return "floating_point";
+	case token_type::bool_literal:    return "boolean";
+	case token_type::none_literal:    return "none";
+	case token_type::unknown:         return "unknown";
 	}
 
 	return "";
@@ -307,7 +307,7 @@ struct tokenizer
 
 	// determine the punctuation type of the symbol under the cursor
 	inline bool
-	get_punctuation_type(u8 sym, token::type &t) const
+	get_punctuation_type(u8 sym, token_type &t) const
 	{
 		for (auto &p: token::punctuations)
 			if (p.sym == sym) {
@@ -424,7 +424,7 @@ struct tokenizer
 		*/
 
 		// punctuations
-		token::type ttype;
+		token_type ttype;
 		if (get_punctuation_type(*tok_start, ttype)) {
 			tok.ttype     = ttype;
 			tok.begin     = tok_start;
@@ -444,7 +444,7 @@ struct tokenizer
 				if (*tok_end == str_delim)
 					break;
 			}
-			tok.ttype = token::type::string_literal;
+			tok.ttype = token_type::string_literal;
 			// range excludes the surrounding ''
 			tok.begin = tok_start + 1;
 			tok.end   = tok_end;
@@ -459,7 +459,7 @@ struct tokenizer
 
 		// read everything until a punctuation or whitespace
 		while (tok_end != data.end()) {
-			token::type ttype;
+			token_type ttype;
 			if (*tok_end == ' ' || get_punctuation_type(*tok_end, ttype))
 				break;
 			++tok_end;
@@ -473,17 +473,17 @@ struct tokenizer
 			// locale's decimal point settings
 			std::string tmp(tok.begin, tok.end);
 			if (is_integer_literal(tmp, tok.value.l))
-				tok.ttype = token::type::integer_literal;
+				tok.ttype = token_type::integer_literal;
 			else if (is_float_literal(tmp, tok.value.d))
-				tok.ttype = token::type::float_literal;
+				tok.ttype = token_type::float_literal;
 			else if (is_bool_literal(tok.begin, tok.end, tok.value.b))
-				tok.ttype = token::type::bool_literal;
+				tok.ttype = token_type::bool_literal;
 			else if (equals(tok.begin, tok.end, "None"))
-				tok.ttype = token::type::none_literal;
+				tok.ttype = token_type::none_literal;
 			else
 				// we could not determine this type.
 				// TODO: maybe return an error code
-				tok.ttype = token::type::unknown;
+				tok.ttype = token_type::unknown;
 		}
 		tok_start = tok_end;
 		return result::ok;
@@ -646,8 +646,8 @@ struct pyparser
 	is_number(token &tok)
 	{
 		return
-			tok.ttype == token::type::float_literal ||
-			tok.ttype == token::type::integer_literal;
+			tok.ttype == token_type::float_literal ||
+			tok.ttype == token_type::integer_literal;
 	}
 
 
@@ -655,7 +655,7 @@ struct pyparser
 	is_string(token &tok)
 	{
 		return
-			tok.ttype == token::type::string_literal;
+			tok.ttype == token_type::string_literal;
 	}
 
 
@@ -663,7 +663,7 @@ struct pyparser
 	is_delimiter(token &tok)
 	{
 		return
-			tok.ttype == token::type::value_separator;
+			tok.ttype == token_type::value_separator;
 	}
 
 
@@ -673,7 +673,7 @@ struct pyparser
 	 * If parsing fails, the tokenizer will be reset to the token that was just
 	 * read.
 	 */
-	template <token::type TokenType, pyparser::type ParserType>
+	template <token_type TokenType, pyparser::type ParserType>
 	std::unique_ptr<parse_result>
 	parse_token_type()
 	{
@@ -740,19 +740,19 @@ struct pyparser
 	// symbols. result of these parse instructions will be ignored, but for the
 	// sake of completeness, we still specify a parser type
 	inline std::unique_ptr<parse_result> parse_delimiter() { return parse_token_fn<type::symbol>(is_delimiter);                     }
-	inline std::unique_ptr<parse_result> parse_colon()     { return parse_token_type<token::type::kv_separator,   type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lbracket()  { return parse_token_type<token::type::left_bracket,   type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rbracket()  { return parse_token_type<token::type::right_bracket,  type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lbrace()    { return parse_token_type<token::type::left_brace,     type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rbrace()    { return parse_token_type<token::type::right_brace,    type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lparen()    { return parse_token_type<token::type::left_paren,     type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rparen()    { return parse_token_type<token::type::right_paren,    type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_colon()     { return parse_token_type<token_type::kv_separator,   type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_lbracket()  { return parse_token_type<token_type::left_bracket,   type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_rbracket()  { return parse_token_type<token_type::right_bracket,  type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_lbrace()    { return parse_token_type<token_type::left_brace,     type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_rbrace()    { return parse_token_type<token_type::right_brace,    type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_lparen()    { return parse_token_type<token_type::left_paren,     type::symbol>();  }
+	inline std::unique_ptr<parse_result> parse_rparen()    { return parse_token_type<token_type::right_paren,    type::symbol>();  }
 
 	// types / literals
 	inline std::unique_ptr<parse_result> parse_number()    { return parse_token_fn<type::integer>(is_number);                       }
-	inline std::unique_ptr<parse_result> parse_string()    { return parse_token_type<token::type::string_literal, type::string>();  }
-	inline std::unique_ptr<parse_result> parse_bool()      { return parse_token_type<token::type::bool_literal,   type::boolean>(); }
-	inline std::unique_ptr<parse_result> parse_none()      { return parse_token_type<token::type::none_literal,   type::none>();    }
+	inline std::unique_ptr<parse_result> parse_string()    { return parse_token_type<token_type::string_literal, type::string>();  }
+	inline std::unique_ptr<parse_result> parse_bool()      { return parse_token_type<token_type::bool_literal,   type::boolean>(); }
+	inline std::unique_ptr<parse_result> parse_none()      { return parse_token_type<token_type::none_literal,   type::none>();    }
 
 
 	std::unique_ptr<parse_result>
