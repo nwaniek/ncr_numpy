@@ -3,4 +3,4 @@
 -Wall
 -Wextra
 -pedantic
--I../include
+-I..

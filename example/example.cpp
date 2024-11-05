@@ -5,12 +5,7 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
-#include <ncr/core/utils.hpp>
-#include <ncr/core/string.hpp>
-#include <ncr/core/impl/zip_libzip.hpp>
-#include <ncr/core/unicode.hpp>
-#include <ncr/core/string_conversions.hpp>
-#include <ncr/numpy.hpp>
+#include <ncr_numpy.hpp>
 
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR 0
@@ -30,6 +25,12 @@
 
 
 using namespace ncr;
+
+inline std::string
+strpad(const std::string& str, size_t length)
+{
+    return str + std::string(std::max(length - str.size(), size_t(0)), ' ');
+}
 
 
 /*
@@ -373,7 +374,7 @@ example_structured()
 	// numpy uses C's memory layout for structured arrays. The array's data can
 	// therefore be read directly into a suitable variable such as a POD struct
 	std::cout << "Explicitly accessing data:\n";
-	student_t &student = arr.value<student_t>(0);
+	student_t student = arr.value<student_t>(0);
 	std::cout << "  " << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
 
 	// we can also use the apply function and a lambda to do this for all
@@ -554,7 +555,7 @@ example_nested()
 	std::cout << "\n";
 	std::cout << "Top 3 countries w.r.t GDP (via ndarray::map):\n";
 	arr.map([&](const numpy::ndarray_item &item, size_t flat_index) {
-			auto &record = item.as<year_gdp_record_packed_t>();
+			auto record = item.as<year_gdp_record_packed_t>();
 			std::cout << "  " << record.year << " (item index: " << ncr::to_string(arr.unravel(flat_index)) << ")\n";
 			std::cout << "    " << strpad(to_string(record.c1.country_name) + ":", 10) << std::setw(10) << record.c1.gdp << " USD\n";
 			std::cout << "    " << strpad(to_string(record.c2.country_name) + ":", 10) << std::setw(10) << record.c2.gdp << " USD\n";
