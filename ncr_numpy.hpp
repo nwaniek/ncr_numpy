@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.5.0
+#define NCR_NUMPY_VERSION 0.5.1
 
 #include <cstring>
 #include <cassert>
@@ -55,8 +55,6 @@
 #include <variant>
 #include <unordered_set>
 #include <bit>
-#include <sys/stat.h>
-#include <chrono>
 #include <cstddef>
 #include <optional>
 #include <zip.h>
@@ -3407,126 +3405,6 @@ toggle_bit(const T v, const U N)
 
 #endif /* _6029ff7cb97c498f8a26966c49a873fe_ */
 
-/*
- * ncr_zip - zip backend interface declaration
- *
- */
-#ifndef _8d2a79e5218b40e3807880febfa294a0_
-#define _8d2a79e5218b40e3807880febfa294a0_
-
-#ifndef NCR_TYPES
-#include <cstdint>
-using u8 = std::uint8_t;
-using u32 = std::uint32_t;
-#endif
-
-#ifndef NCR_TYPES_HAS_VECTORS
-#include <vector>
-using u8_vector = std::vector<u8>;
-#endif
-
-
-namespace ncr {
-
-/*
- * zip - namespace for arbitrary zip backend implementations
- *
- * Everyone and their grandma has their favourite zip backend. Let it be some
- * custom rolled zlib backend, zlib-ng, minizip, libzip, etc. To provide some
- * flexibility in the backend and allow projects to avoid pulling in too many
- * dependencies (if they already use a backend), specify only an interface here.
- * It is up to the user to select which backend to use. For an example backend
- * implementation, see ncr_zip_impl_libzip.hpp, which implements a libzip
- * backend. Follow the implementation there to implement alternative backends.
- * Make sure to include the appropriate one you want.
- */
-namespace zip {
-	// (partially) translated errors from within a zip backend. they are mostly
-	// inspired from working with libzip
-	enum class result {
-		ok,
-
-		warning_backend_ptr_not_null,
-
-		error_invalid_filepath,
-		error_invalid_argument,
-		error_invalid_state,
-
-		error_archive_not_open,
-		error_invalid_file_index,
-		error_file_not_found,
-		error_file_deleted,
-		error_memory,
-		error_write,
-		error_read,
-		error_compression_failed,
-
-		error_end_of_file,
-		error_file_close,
-
-		internal_error,
-	};
-
-	// mode for file opening.
-	// TODO: currently, reading and writing are treated mutually exclusive. not
-	//       clear if this is the best way to treat this
-	enum class filemode : unsigned {
-		read   = 1 << 0,
-		write  = 1 << 1
-	};
-
-	// a zip backend might require to store state between calls, e.g. when
-	// opening a file to store an (internal) file pointer. this needs to be
-	// opaque to the interface and is handled here in a separate (implementation
-	// specific) struct.
-	struct backend_state;
-
-	// common interface for any zip backend
-	struct backend_interface {
-		// create a backend state
-		result (*make)(backend_state **);
-
-		// release a backend pointer.
-		result (*release)(backend_state **);
-
-		// open an archive
-		result (*open)(backend_state *, const std::filesystem::path filepath, filemode mode);
-
-		// close an archive
-		result (*close)(backend_state *);
-
-		// return the list of files contained within an archive
-		result (*get_file_list)(backend_state *, std::vector<std::string> &list);
-
-		// read a given filename from an archive. Note that the filename relates to
-		// a file within the archive, not on the local filesystem. The
-		// decompressed/read file should be stored in `buffer'.
-		result (*read)(backend_state *, const std::string filename, u8_vector &buffer);
-
-		// write a buffer to an already opened zip archive. the compression level
-		// depends on the backend. for zlib and many zlib based libraries, 0 is
-		// most the default compression level, and other compression levels range
-		// from 1 to 9, with 1 being the fastest (but weakest) compression and 9 the
-		// slowest (but strongest).
-		//
-		// Note: the backend implementation will take ownership of the buffer. that
-		// is, the buffer will be moved to the function. The reason is that
-		// (currently) the buffer is created locally and its livetime might be
-		// shorter than what the backend requires. With transfer of ownership, the
-		// backend can make sure that the buffer survives as long as required. For
-		// an example of this behavior, see ncr_zip_impl_libzip.hpp
-		result (*write)(backend_state *, const std::string filename, u8_vector &&buffer, bool compress, u32 compression_level);
-	};
-
-	// get an interface for the backend
-	extern backend_interface& get_backend_interface();
-
-} // zip::
-
-} // ncr::
-
-#endif /* _8d2a79e5218b40e3807880febfa294a0_ */
-
 #ifndef _65fc1481d8d149029547d3932c93f2e0_
 #define _65fc1481d8d149029547d3932c93f2e0_
 
@@ -3810,134 +3688,124 @@ hexdump(std::ostream& os, const std::vector<uint8_t> &data)
 #endif /* _65fc1481d8d149029547d3932c93f2e0_ */
 
 /*
- * ncr_filesystem - ncr specific functions to interact with the file system
- *
+ * ncr_zip - zip backend interface declaration
  *
  */
+#ifndef _8d2a79e5218b40e3807880febfa294a0_
+#define _8d2a79e5218b40e3807880febfa294a0_
 
-#ifndef _1d4bad5ad83a4468b93e5902a833cc19_
-#define _1d4bad5ad83a4468b93e5902a833cc19_
+#ifndef NCR_TYPES
+#include <cstdint>
+using u8 = std::uint8_t;
+using u32 = std::uint32_t;
+#endif
 
-
+#ifndef NCR_TYPES_HAS_VECTORS
+#include <vector>
+using u8_vector = std::vector<u8>;
+#endif
 
 
 namespace ncr {
 
-enum struct filesystem_status : unsigned {
-	Success           = 0x00,
-	ErrorFileNotFound = 0x01
-};
-NCR_DEFINE_ENUM_FLAG_OPERATORS(filesystem_status)
-
-
-inline
-bool
-test(filesystem_status s)
-{
-	return std::underlying_type<filesystem_status>::type(s);
-}
-
-
 /*
- * get_file_size - get the file size of an ifstream in bytes
- */
-inline u64
-get_file_size(std::ifstream &is)
-{
-	auto ip = is.tellg();
-	is.seekg(0, std::ios::end);
-	auto res = is.tellg();
-	is.seekg(ip);
-	return static_cast<u64>(res);
-}
-
-
-
-/*
- * buffer_from_file - fill an u8_vector by (binary) reading a file
- */
-inline bool
-read_file(std::filesystem::path filepath, u8_vector &buffer)
-{
-	std::ifstream fstream(filepath, std::ios::binary | std::ios::in);
-	if (!fstream) {
-		// std::cerr << "Error opening file: " << filepath << std::endl;
-		return false;
-	}
-
-	// resize buffer and read
-	auto filesize = get_file_size(fstream);
-	buffer.resize(filesize);
-	fstream.read(reinterpret_cast<char*>(buffer.data()), filesize);
-
-	// check for errors
-	if (!fstream) {
-		// std::cerr << "Error reading file: " << filepath << std::endl;
-		return false;
-	}
-	return true;
-}
-
-
-/*
- * read_file - read a whole file into a string.
+ * zip - namespace for arbitrary zip backend implementations
  *
- * This is not the fastest method, but it's portable. In case this is ever a
- * speed issue, maybe use fread directly.
+ * Everyone and their grandma has their favourite zip backend. Let it be some
+ * custom rolled zlib backend, zlib-ng, minizip, libzip, etc. To provide some
+ * flexibility in the backend and allow projects to avoid pulling in too many
+ * dependencies (if they already use a backend), specify only an interface here.
+ * It is up to the user to select which backend to use. For an example backend
+ * implementation, see ncr_zip_impl_libzip.hpp, which implements a libzip
+ * backend. Follow the implementation there to implement alternative backends.
+ * Make sure to include the appropriate one you want.
  */
-inline filesystem_status
-read_file_to_string(std::string filename, std::string &content)
-{
-	auto os = std::ostringstream{};
-	std::ifstream file(filename);
-	if (!file) {
-		content = "";
-		return filesystem_status::ErrorFileNotFound;
-	}
-	os << file.rdbuf();
-	content = os.str();
-	return filesystem_status::Success;
-}
+namespace zip {
+	// (partially) translated errors from within a zip backend. they are mostly
+	// inspired from working with libzip
+	enum class result {
+		ok,
 
+		warning_backend_ptr_not_null,
 
-/*
- * mkfilename - make a temporary filename based on current time
- */
-inline std::string
-mkfilename(std::string basename, std::string ext = ".cfg")
-{
-	std::ostringstream os;
-	const std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
-	const std::time_t tt = std::chrono::system_clock::to_time_t(now);
-	std::tm tm = *std::localtime(&tt);
-	os << basename << "-" << std::put_time(&tm, "%Y%m%d%H%M%S") << ext;
-	return os.str();
-}
+		error_invalid_filepath,
+		error_invalid_argument,
+		error_invalid_state,
 
+		error_archive_not_open,
+		error_invalid_file_index,
+		error_file_not_found,
+		error_file_deleted,
+		error_memory,
+		error_write,
+		error_read,
+		error_compression_failed,
 
-// TODO: move the above into the filesystem namespace as well
-namespace filesystem {
+		error_end_of_file,
+		error_file_close,
 
-/*
- * exists - test if a file exists in the filesystem or not
- *
- * This is the fastest way to determine if a file exists or not. See
- * https://stackoverflow.com/questions/12774207/fastest-way-to-check-if-a-file-exists-using-standard-c-c11-14-17-c
- * for more discussion.
- */
-inline bool
-exists(const std::string &filename)
-{
-	struct stat buffer;
-	return stat(filename.c_str(), &buffer) == 0;
-}
+		internal_error,
+	};
 
+	// mode for file opening.
+	// TODO: currently, reading and writing are treated mutually exclusive. not
+	//       clear if this is the best way to treat this
+	enum class filemode : unsigned {
+		read   = 1 << 0,
+		write  = 1 << 1
+	};
 
-} // ncr::filesystem
+	// a zip backend might require to store state between calls, e.g. when
+	// opening a file to store an (internal) file pointer. this needs to be
+	// opaque to the interface and is handled here in a separate (implementation
+	// specific) struct.
+	struct backend_state;
+
+	// common interface for any zip backend
+	struct backend_interface {
+		// create a backend state
+		result (*make)(backend_state **);
+
+		// release a backend pointer.
+		result (*release)(backend_state **);
+
+		// open an archive
+		result (*open)(backend_state *, const std::filesystem::path filepath, filemode mode);
+
+		// close an archive
+		result (*close)(backend_state *);
+
+		// return the list of files contained within an archive
+		result (*get_file_list)(backend_state *, std::vector<std::string> &list);
+
+		// read a given filename from an archive. Note that the filename relates to
+		// a file within the archive, not on the local filesystem. The
+		// decompressed/read file should be stored in `buffer'.
+		result (*read)(backend_state *, const std::string filename, u8_vector &buffer);
+
+		// write a buffer to an already opened zip archive. the compression level
+		// depends on the backend. for zlib and many zlib based libraries, 0 is
+		// most the default compression level, and other compression levels range
+		// from 1 to 9, with 1 being the fastest (but weakest) compression and 9 the
+		// slowest (but strongest).
+		//
+		// Note: the backend implementation will take ownership of the buffer. that
+		// is, the buffer will be moved to the function. The reason is that
+		// (currently) the buffer is created locally and its livetime might be
+		// shorter than what the backend requires. With transfer of ownership, the
+		// backend can make sure that the buffer survives as long as required. For
+		// an example of this behavior, see ncr_zip_impl_libzip.hpp
+		result (*write)(backend_state *, const std::string filename, u8_vector &&buffer, bool compress, u32 compression_level);
+	};
+
+	// get an interface for the backend
+	extern backend_interface& get_backend_interface();
+
+} // zip::
 
 } // ncr::
 
-#endif /* _1d4bad5ad83a4468b93e5902a833cc19_ */
+#endif /* _8d2a79e5218b40e3807880febfa294a0_ */
 
 #ifndef _9750a253a01642ea81d4721d4c92ad7c_
 #define _9750a253a01642ea81d4721d4c92ad7c_
@@ -5056,6 +4924,20 @@ open_npy(std::filesystem::path filepath, std::ifstream &file)
 }
 
 
+#ifndef NCR_HAS_GET_FILE_SIZE
+#define NCR_HAS_GET_FILE_SIZE
+inline u64
+get_file_size(std::ifstream &is)
+{
+	auto ip = is.tellg();
+	is.seekg(0, std::ios::end);
+	auto res = is.tellg();
+	is.seekg(ip);
+	return static_cast<u64>(res);
+}
+#endif
+
+
 /*
  * from_nyp - read a file into a container
  *
@@ -5075,7 +4957,7 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	// work with and considered bad design by many developers. We'll load the
 	// file into a vector (which is not the fastest), but then working with it
 	// is reasonably simple
-	auto filesize = ncr::get_file_size(file);
+	auto filesize = get_file_size(file);
 	u8_vector buf(filesize);
 	if constexpr (unsafe_read)
 		file.read(reinterpret_cast<char*>(buf.data()), filesize);

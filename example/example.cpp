@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
-#include <ncr_numpy.hpp>
+#include "ncr_numpy.hpp"
+
 
 #ifndef VERSION_MAJOR
 #define VERSION_MAJOR 0
@@ -26,10 +27,48 @@
 
 using namespace ncr;
 
+
+/*
+ * strpad - pad a string with whitespace to make it at least length chars long
+ */
 inline std::string
 strpad(const std::string& str, size_t length)
 {
     return str + std::string(std::max(length - str.size(), size_t(0)), ' ');
+}
+
+
+inline u64
+get_file_size(std::ifstream &is)
+{
+	auto ip = is.tellg();
+	is.seekg(0, std::ios::end);
+	auto res = is.tellg();
+	is.seekg(ip);
+	return static_cast<u64>(res);
+}
+
+
+inline bool
+read_file(std::filesystem::path filepath, u8_vector &buffer)
+{
+	std::ifstream fstream(filepath, std::ios::binary | std::ios::in);
+	if (!fstream) {
+		// std::cerr << "Error opening file: " << filepath << std::endl;
+		return false;
+	}
+
+	// resize buffer and read
+	auto filesize = get_file_size(fstream);
+	buffer.resize(filesize);
+	fstream.read(reinterpret_cast<char*>(buffer.data()), filesize);
+
+	// check for errors
+	if (!fstream) {
+		// std::cerr << "Error reading file: " << filepath << std::endl;
+		return false;
+	}
+	return true;
 }
 
 
@@ -274,11 +313,29 @@ example_facade()
 	std::cout << "facade example\n";
 	std::cout << "--------------\n";
 
+	{
+		std::cout << "dtype_selector\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<i16>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<i32>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<i64>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<u16>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<u32>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<u64>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<f16>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<f32>::get()); std::cout << "\n";
+		numpy::serialize_dtype(std::cout, ncr::numpy::dtype_selector<f64>::get()); std::cout << "\n";
+	}
+
+	std::cout << "\narray and from_npy\n";
+
 	// we can create facades for arrays, which wrap operator(). This makes
 	// working with ndarrays even easier than with the basic ndarray itself if
 	// you know the underlying type of your data.
 	numpy::ndarray_t<f64> arr;
+	numpy::serialize_dtype(std::cout, arr.dtype()); std::cout << "\n";
+
 	numpy::from_npy("assets/in/simpletensor1.npy", arr);
+	numpy::serialize_dtype(std::cout, arr.dtype()); std::cout << "\n";
 	std::cout << "shape: "; numpy::serialize_shape(std::cout, arr.shape()); std::cout << "\n";
 	std::cout << "\narray before changes\n"	;
 	print_tensor(arr, "  ");
@@ -291,6 +348,11 @@ example_facade()
 	std::cout << "\narray after changes\n";
 	print_tensor(arr, "  ");
 	std::cout << "\n";
+
+	// using arr in an expression
+	f64 value = 5.0;
+	value = value + arr(1, 2, 3);
+	std::cout << "\nvalue = " << value << "\n";
 }
 
 
@@ -381,7 +443,7 @@ example_structured()
 	// students
 	std::cout << "Walking over all items in the array:\n";
 	arr.apply<student_t>(
-		[](student_t &student) {
+		[](student_t student) {
 			std::cout << "  " << student.name << " has grades " << student.grades[0] << " and " << student.grades[1] << "\n";
 			// don't forget to return (see definition of apply for details)
 			return student;
@@ -604,8 +666,6 @@ example_nested()
 		std::cout << record;
 	});
 	std::cout.copyfmt(old_state);
-
-
 }
 
 
@@ -753,8 +813,8 @@ example_callbacks()
 int
 main()
 {
-	setlocale(LC_ALL, "");
-	std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
+	// setlocale(LC_ALL, "");
+	// std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
 
 	example_ndarray();       std::cout << "\n";
 	example_simple_api();    std::cout << "\n";
@@ -764,7 +824,6 @@ main()
 	example_structured();    std::cout << "\n";
 	example_nested();        std::cout << "\n";
 	example_callbacks();
-
 
 	return 0;
 }
