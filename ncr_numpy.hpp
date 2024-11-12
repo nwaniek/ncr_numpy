@@ -10,17 +10,17 @@
  * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  *
  * MIT License
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,30 +30,34 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.5.1
+#define NCR_NUMPY_VERSION 0.5.4
 
 #include <cstring>
 #include <cassert>
 #include <type_traits>
 #include <functional>
 #include <vector>
-#include <algorithm>
 #include <iostream>
 #include <iomanip>
+#include <span>
 #include <cstdint>
 #include <complex>
 #include <stdfloat>
-#include <ranges>
 #include <string>
+#include <sys/types.h>
+#include <unordered_map>
 #include <memory>
 #include <array>
 #include <sstream>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <iterator>
 #include <map>
 #include <variant>
 #include <unordered_set>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <bit>
 #include <cstddef>
 #include <optional>
@@ -153,8 +157,10 @@
 	#include <stdfloat>
 #endif
 #ifndef NCR_TYPES_DISABLE_VECTORS
-	#include <ranges>
 	#include <vector>
+	#ifdef NCR_TYPES_ENABLE_STD_RANGES
+		#include <ranges>
+	#endif
 #endif
 
 
@@ -203,30 +209,41 @@ using c256         = std::complex<f128>;
 
 #ifndef NCR_TYPES_DISABLE_VECTORS
 #define NCR_TYPES_HAS_VECTORS
-using u8_vector         = std::vector<u8>;
-using u8_iterator       = u8_vector::iterator;
-using u8_subrange       = std::ranges::subrange<u8_iterator>;
-using u8_const_iterator = u8_vector::const_iterator;
-using u8_const_subrange = std::ranges::subrange<u8_const_iterator>;
+using u8_vector          = std::vector<u8>;
+using u8_iterator        = u8_vector::iterator;
+using u8_const_iterator  = u8_vector::const_iterator;
 
 using u16_vector         = std::vector<u16>;
 using u16_iterator       = u16_vector::iterator;
-using u16_subrange       = std::ranges::subrange<u16_iterator>;
 using u16_const_iterator = u16_vector::const_iterator;
-using u16_const_subrange = std::ranges::subrange<u16_const_iterator>;
 
 using u32_vector         = std::vector<u32>;
 using u32_iterator       = u32_vector::iterator;
-using u32_subrange       = std::ranges::subrange<u32_iterator>;
 using u32_const_iterator = u32_vector::const_iterator;
-using u32_const_subrange = std::ranges::subrange<u32_const_iterator>;
 
 using u64_vector         = std::vector<u64>;
 using u64_iterator       = u64_vector::iterator;
-using u64_subrange       = std::ranges::subrange<u64_iterator>;
 using u64_const_iterator = u64_vector::const_iterator;
+
+#ifdef NCR_TYPES_ENABLE_STD_RANGES
+#define NCR_TYPES_HAS_STD_RANGES
+using u8_subrange        = std::ranges::subrange<u8_iterator>;
+using u8_const_subrange  = std::ranges::subrange<u8_const_iterator>;
+
+using u16_subrange       = std::ranges::subrange<u16_iterator>;
+using u16_const_subrange = std::ranges::subrange<u16_const_iterator>;
+
+using u32_subrange       = std::ranges::subrange<u32_iterator>;
+using u32_const_subrange = std::ranges::subrange<u32_const_iterator>;
+
+using u64_subrange       = std::ranges::subrange<u64_iterator>;
 using u64_const_subrange = std::ranges::subrange<u64_const_iterator>;
 #endif
+#endif
+
+using u8_span = std::span<u8>;
+using u8_const_span = std::span<const u8>;
+
 
 #endif /* _909f868e37c64952a3871f2f678d0778_ */
 
@@ -437,6 +454,7 @@ to_string(const ucs4string<N> &ucs4)
 }
 
 
+#ifdef NCR_ENABLE_STREAM_OPERATORS
 template <size_t N = 0>
 std::ostream&
 operator<<(std::ostream& os, const ucs4string<N> &ucs4)
@@ -444,6 +462,7 @@ operator<<(std::ostream& os, const ucs4string<N> &ucs4)
 	os << to_string(ucs4);
 	return os;
 }
+#endif
 
 
 
@@ -574,6 +593,7 @@ to_string(const utf8string<N> &utf8)
 }
 
 
+#ifdef NCR_ENABLE_STREAM_OPERATORS
 template <size_t N = 0>
 std::ostream&
 operator<<(std::ostream& os, const utf8string<N> &utf8)
@@ -581,6 +601,7 @@ operator<<(std::ostream& os, const utf8string<N> &utf8)
 	os << to_string(utf8);
 	return os;
 }
+#endif
 
 
 } // ncr
@@ -588,34 +609,18 @@ operator<<(std::ostream& os, const utf8string<N> &utf8)
 #endif /* _53994d0d2b6d47028f271c81f3b8f52a_ */
 
 /*
- * ndarray.hpp - n-dimensional array implementation
- *
- *
- * While the ndarray is tightly integrated with ncr_numpy, it is not within the
- * ncr::numpy namespace. The reason is that the ndarray implementation here is
- * generic enough that it can be used outside of numpy and the purpose of the
- * numpy namespace.
- *
- * ndarray is not a template. This was a design decision to avoid template creep
- * in ncr::numpy. That is, operator() does not return an explicit type such das
- * f32, because there is no such thing as ndarray<f32>. In contrast, operator()
- * returns an ndarray_item, which itself only encapsulates an u8 subrange. To
- * avoid the intermediary ndarray_item, use the ndarray's value() function.
- *
- *
- * TODO: determine if size-matching needs to be equal instead of smaller-equal
- *       (see e.g. ndarray.value)
- * TODO: combine ndarray_item with ndarray_t::proxy if possible (and sensible)
- * TODO: broadcasting / ellipsis
+ * ncr/ndindex.hpp - functions to calculate indexes of N-D arrays
  */
-#ifndef _719685da6c474222b60a9d28795719db_
-#define _719685da6c474222b60a9d28795719db_
+#ifndef _8840dbd5d93342cda97ac95e4a7ed8b3_
+#define _8840dbd5d93342cda97ac95e4a7ed8b3_
 
 
+#ifndef NCR_TYPES
+using u8 = std::uint8_t;
+#endif
 
 
-namespace ncr { namespace numpy {
-
+namespace ncr {
 
 /*
  * byte_order - byte order indicator
@@ -645,6 +650,21 @@ to_char(byte_order o)
 }
 
 
+inline byte_order
+to_byte_order(const u8 chr)
+{
+	switch (chr) {
+	case '>': return byte_order::big;
+	case '<': return byte_order::little;
+	case '=': return byte_order::native;
+	case '|': return byte_order::not_relevant;
+	default:  return byte_order::invalid;
+	};
+}
+
+
+
+#ifdef NCR_ENABLE_STREAM_OPERATORS
 // operator<< usually used in std::cout
 // TODO: remove or disable?
 inline std::ostream&
@@ -661,6 +681,7 @@ operator<<(std::ostream &os, const byte_order bo)
 	}
 	return os;
 }
+#endif
 
 
 /*
@@ -677,6 +698,7 @@ enum class storage_order {
 };
 
 
+#ifdef NCR_ENABLE_STREAM_OPERATORS
 /*
  * operator<< - pretty print the storage order as text
  */
@@ -689,6 +711,7 @@ operator<<(std::ostream &os, const storage_order order)
 	}
 	return os;
 }
+#endif
 
 
 template <typename T = size_t>
@@ -720,6 +743,7 @@ unravel_index(T index, const std::vector<T>& shape, storage_order order)
 
 	return indices;
 }
+
 
 
 template <typename T = size_t>
@@ -827,6 +851,22 @@ compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_or
 	}
 }
 
+
+
+} // ncr::
+
+#endif /* _8840dbd5d93342cda97ac95e4a7ed8b3_ */
+
+/*
+ * ncr/dtype.hpp - data type definition for numpy nd-arrays
+ */
+#ifndef _f7e9e094e0ba4453850c999f0e7f2a56_
+#define _f7e9e094e0ba4453850c999f0e7f2a56_
+
+
+
+// TODO: decide if this should remain in the numpy namespace or not
+namespace ncr { namespace numpy {
 
 /*
  * dtype - data type description of elements in the ndarray
@@ -946,7 +986,8 @@ template <typename Func>
 void
 for_each_field(dtype &dt, Func &&func)
 {
-	std::for_each(dt.fields.begin(), dt.fields.end(), std::forward<Func>(func));
+	for (auto& field: dt.fields)
+		func(field);
 }
 
 
@@ -954,7 +995,8 @@ template <typename Func>
 void
 for_each_field(const dtype &dt, Func &&func)
 {
-	std::for_each(dt.fields.begin(), dt.fields.end(), std::forward<Func>(func));
+	for (const auto& field: dt.fields)
+		func(field);
 }
 
 
@@ -962,14 +1004,16 @@ template <typename Func>
 void
 for_each(std::vector<dtype> &fields, Func &&func)
 {
-	std::for_each(fields.begin(), fields.end(), std::forward<Func>(func));
+	for (auto& field: fields)
+		func(field);
 }
 
 template <typename Func>
 void
 for_each(const std::vector<dtype> &fields, Func &&func)
 {
-	std::for_each(fields.begin(), fields.end(), std::forward<Func>(func));
+	for (const auto& field: fields)
+		func(field);
 }
 
 
@@ -1084,6 +1128,7 @@ serialize_fortran_order(std::ostream &s, storage_order o)
 }
 
 
+#ifdef NCR_ENABLE_STREAM_OPERATORS
 /*
  * operator<< - pretty print a dtype
  */
@@ -1098,7 +1143,41 @@ operator<< (std::ostream &os, const dtype &dt)
 	os << s.str();
 	return os;
 }
+#endif
 
+
+}} // ncr::numpy::
+
+
+#endif /* _f7e9e094e0ba4453850c999f0e7f2a56_ */
+
+/*
+ * ndarray.hpp - n-dimensional array implementation
+ *
+ *
+ * While the ndarray is tightly integrated with ncr_numpy, it is not within the
+ * ncr::numpy namespace. The reason is that the ndarray implementation here is
+ * generic enough that it can be used outside of numpy and the purpose of the
+ * numpy namespace.
+ *
+ * ndarray is not a template. This was a design decision to avoid template creep
+ * in ncr::numpy. That is, operator() does not return an explicit type such das
+ * f32, because there is no such thing as ndarray<f32>. In contrast, operator()
+ * returns an ndarray_item, which itself only encapsulates an u8 subrange. To
+ * avoid the intermediary ndarray_item, use the ndarray's value() function.
+ *
+ *
+ * TODO: determine if size-matching needs to be equal instead of smaller-equal
+ *       (see e.g. ndarray.value)
+ * TODO: combine ndarray_item with ndarray_t::proxy if possible (and sensible)
+ * TODO: broadcasting / ellipsis
+ */
+#ifndef _719685da6c474222b60a9d28795719db_
+#define _719685da6c474222b60a9d28795719db_
+
+
+
+namespace ncr { namespace numpy {
 
 
 /*
@@ -1106,6 +1185,9 @@ operator<< (std::ostream &os, const dtype &dt)
  */
 struct ndarray_item;
 struct ndarray;
+
+
+// using u8_span = std::span<const u8>;
 
 
 /*
@@ -1131,16 +1213,18 @@ struct ndarray_item
 {
 	ndarray_item() = delete;
 
-	ndarray_item(u8_subrange &&_ra, struct dtype &_dt)
-		: _r(_ra)
-		, _size(sizeof(_r))
+	explicit
+	ndarray_item(u8* data, size_t size, struct dtype &_dt)
+		: _data(data)
+		, _size(size)
 		, _dtype(_dt)
 		{}
 
-	ndarray_item(u8_vector::iterator begin, u8_vector::iterator end, dtype &dt)
-		: _r(u8_subrange(begin, end))
-		, _size(sizeof(_r))
-		, _dtype(dt)
+	explicit
+	ndarray_item(u8_span&& span, struct dtype& _dt)
+		: _data(span.data())
+		, _size(span.size())
+		, _dtype(_dt)
 		{}
 
 
@@ -1149,13 +1233,13 @@ struct ndarray_item
 	as() const {
 		// avoid reintrepreting to types which are too large and thus exceed
 		// memory bounds
-		if (_r.size() < sizeof(T)) {
+		if (_size < sizeof(T)) {
 			std::ostringstream s;
-			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _r.size() << " bytes)";
+			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _size << " bytes)";
 			throw std::out_of_range(s.str());
 		}
 		T val;
-		std::memcpy(&val, _r.data(), sizeof(T));
+		std::memcpy(&val, _data, sizeof(T));
 		return val;
 	}
 
@@ -1164,26 +1248,26 @@ struct ndarray_item
 	void
 	operator=(T value)
 	{
-		if (_r.size() < sizeof(T)) {
+		if (_size < sizeof(T)) {
 			std::ostringstream s;
-			s << "Value size (" << sizeof(T) << " bytes) exceeds location size (" << _r.size() << " bytes)";
+			s << "Value size (" << sizeof(T) << " bytes) exceeds location size (" << _size << " bytes)";
 			throw std::length_error(s.str());
 		}
-		std::memcpy(_r.data(), &value, sizeof(T));
+		std::memcpy(_data, &value, sizeof(T));
 	}
 
 
 	inline
-	const u8_subrange
-	range() const {
-		return _r;
+	u8_const_span
+	span() const {
+		return u8_const_span(_data, _size);
 	}
 
 
 	inline
 	const u8*
 	data() const {
-		return _r.data();
+		return _data;
 	}
 
 
@@ -1216,8 +1300,8 @@ struct ndarray_item
 
 private:
 	// the data subrange within the ndarray
-	const u8_subrange
-		_r;
+	u8*
+		_data;
 
 	// the size of the subrange. this might be required frequently, so we store
 	// it once
@@ -1236,7 +1320,7 @@ struct field_extractor
 	static const T
 	get_field(const ndarray_item &item, const dtype& dt)
 	{
-		auto range_size = item.range().size();
+		auto range_size = item.bytesize();
 		if ((dt.offset + sizeof(T)) > range_size) {
 			std::ostringstream s;
 			s << "Target type size (" << sizeof(T) << " bytes) out of range (" << range_size << " bytes, offset " << dt.offset << " bytes)";
@@ -1257,7 +1341,7 @@ struct field_extractor<T, std::enable_if_t<is_ucs4string<T>::value>>
 	{
 		constexpr auto N = ucs4string_size<T>::value;
 		constexpr auto B = ucs4string_bytesize<T>::value;
-		auto range_size = item.range().size();
+		auto range_size = item.bytesize();
 		if ((dt.offset + B) > range_size) {
 			std::ostringstream s;
 			s << "Target string size (" << B << " bytes) out of range (" << range_size << " bytes, offset " << dt.offset << " bytes)";
@@ -1369,10 +1453,10 @@ struct ndarray
 
 
 	/*
-	 * get - get the u8 subrange in the data buffer for an element
+	 * get - get the u8 span in the data buffer for an element
 	 */
 	template <typename ...Indexes>
-	u8_subrange
+	u8_span
 	get(Indexes... index)
 	{
 		// Number of indices must match number of dimensions
@@ -1395,19 +1479,18 @@ struct ndarray
 			size_t offset = 0;
 			((offset += index * _strides[i], i++), ...);
 
-			return u8_subrange(_data.begin() + _dtype.item_size * offset,
-			                   _data.begin() + _dtype.item_size * (offset + 1));
+			return u8_span(_data.data() + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
 			// TODO: evaluate if this is the correct response here
-			return u8_subrange();
+			return u8_span();
 	}
 
 
 	/*
 	 * get - get the u8 subrange in the data buffer for an element
 	 */
-	u8_subrange
+	u8_span
 	get(u64_vector indexes)
 	{
 		// TODO: don't assert, throw exception
@@ -1421,12 +1504,11 @@ struct ndarray
 				// update offset
 				offset += indexes[i] * _strides[i];
 			}
-			return u8_subrange(_data.begin() + _dtype.item_size * offset,
-			                   _data.begin() + _dtype.item_size * (offset + 1));
+			return u8_span(_data.data() + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
 			// TODO: like above, evaluate if this is the correct response
-			return u8_subrange();
+			return u8_span();
 	}
 
 
@@ -1534,16 +1616,16 @@ struct ndarray
 	 * TODO: provide an apply function which also passes the element index back
 	 * to the transformation function
 	 */
-	template <typename Func = std::function<u8_vector (u8_const_subrange)>>
+	template <typename Func = std::function<u8_vector (u8_span)>>
 	inline void
 	apply(Func func)
 	{
 		size_t offset = 0;
 		auto stride = _dtype.item_size;
 		while (offset < _data.size()) {
-			auto range = u8_const_subrange(_data.begin() + offset, _data.begin() + offset + stride);
-			auto new_value = func(range);
-			if (new_value.size() != range.size())
+			auto span = u8_span(_data.data() + offset, stride);
+			auto new_value = func(span);
+			if (new_value.size() != span.size())
 				throw std::length_error("Invalid size of result");
 			std::copy(new_value.begin(), new_value.end(), _data.begin() + offset);
 			offset += stride;
@@ -1588,8 +1670,8 @@ struct ndarray
 	{
 		for (size_t i = 0; i < _size; i++) {
 			func(ndarray_item(
-					u8_subrange(_data.begin() + _dtype.item_size * i,
-								_data.begin() + _dtype.item_size * (i + 1)),
+					_data.data() + _dtype.item_size * i,
+					_dtype.item_size,
 					_dtype), i);
 		}
 	}
@@ -2043,56 +2125,60 @@ struct memory_guard<T, Ts...> : memory_guard<Ts...>
 namespace ncr {
 
 
-template <typename T>
+struct strfmtopts {
+	const char *sep = ", ";
+	const char *beg = "[";
+	const char *end = "]";
+};
+
+
+template <typename Iterator, typename Sentinel>
 std::string
-to_string(const std::vector<T>& vec, const char *sep = ", ", const char *beg="[", const char *end="]")
+to_string(Iterator iter, Sentinel sentinel, const strfmtopts& opts = {})
 {
+	using ValueType = typename std::iterator_traits<Iterator>::value_type;
+
 	std::ostringstream oss;
-	oss << beg;
-	for (size_t i = 0; i < vec.size(); ++i) {
-		if (i != 0) {
-			oss << sep;
-		}
-		oss << vec[i];
+	oss << opts.beg;
+	bool first = true;
+	for (Iterator it = iter; it != sentinel; ++it) {
+		if (!first)
+			oss << opts.sep;
+
+		if constexpr (std::is_same_v<ValueType, uint8_t>)
+			oss << static_cast<int>(*it);
+		else
+			oss << *it;
+
+		first = false;
 	}
-	oss << end;
+	oss << opts.end;
 	return oss.str();
+}
+
+template <typename T>
+std::string to_string(const std::vector<T>& vec, const strfmtopts& opts = {})
+{
+	return to_string(vec.begin(), vec.end(), opts);
 }
 
 template <typename T, std::size_t N>
-std::string
-to_string(const std::array<T, N>& vec, const char *sep = ", ", const char *beg="[", const char *end="]")
+std::string to_string(const std::array<T, N>& arr, const strfmtopts& opts = {})
 {
-	std::ostringstream oss;
-	oss << beg;
-	for (size_t i = 0; i < vec.size(); ++i) {
-		if (i != 0) {
-			oss << sep;
-		}
-		oss << vec[i];
-	}
-	oss << end;
-	return oss.str();
+	return to_string(arr.begin(), arr.end(), opts);
 }
 
 template <typename T>
-std::string
-to_string(const std::ranges::subrange<T> &range, const char *sep = ", ", const char *beg="[", const char *end="]")
+std::string to_string(const std::span<T>& span,  const strfmtopts& opts = {})
 {
-	std::ostringstream oss;
-	oss << beg;
-	bool first = true;
-	for (const auto &elem: range) {
-		if (!first)
-			oss << sep;
+	return to_string(span.begin(), span.end(), opts);
+}
 
-		if constexpr (std::is_same_v<typename T::value_type, uint8_t>)
-			oss << static_cast<int>(elem);
-		else
-			oss << elem << sep;
-	}
-	oss << end;
-	return oss.str();
+// Optionally, overload for C-style arrays
+template <typename T, std::size_t N>
+std::string to_string(const T (&arr)[N], const strfmtopts& opts = {})
+{
+	return to_string(std::begin(arr), std::end(arr), opts);
 }
 
 
@@ -2115,16 +2201,29 @@ namespace ncr { namespace numpy {
 
 
 inline bool
-equals(const u8_const_subrange &subrange, const std::string_view &str)
+equals(const u8_const_span &subspan, const std::string_view &str)
 {
-	return std::ranges::equal(subrange, str);
+	return (subspan.size() == str.size()) &&
+	       std::equal(subspan.begin(), subspan.end(), str.begin());
 }
 
 
 inline bool
 equals(u8_const_iterator first, u8_const_iterator last, const std::string_view &str)
 {
-	return equals(u8_const_subrange(first, last), str);
+	return equals(u8_const_span(&*first, std::distance(first, last)), str);
+}
+
+inline bool
+equals(u8* first, u8* last, const std::string_view &str)
+{
+	return equals(u8_const_span(&*first, std::distance(first, last)), str);
+}
+
+inline bool
+equals(const u8* first, const u8* last, const std::string_view &str)
+{
+	return equals(u8_const_span(&*first, std::distance(first, last)), str);
 }
 
 
@@ -2164,9 +2263,9 @@ struct token {
 
 	// explicitly store the iterators for this token relative to the input data.
 	// this makes debugging and data extraction slightly easier
-	u8_const_iterator begin;
-	u8_const_iterator end;
-	u8_const_subrange range() const { return u8_const_subrange(begin, end); }
+	const u8* begin;
+	const u8* end;
+	u8_const_span span() const { return u8_const_span(&*begin, std::distance(begin, end)); }
 
 	// in case of numbers or single symbols, we also directly store the
 	// (converted) value. In case of numerical values, this is a byproduct of
@@ -2224,6 +2323,13 @@ struct token {
 	}
 };
 
+inline bool
+equals(const token &tok, const std::string_view &str)
+{
+	return equals(u8_const_span(&*tok.begin, std::distance(tok.begin, tok.end)), str);
+}
+
+
 
 
 /*
@@ -2266,7 +2372,7 @@ std::string
 to_string(const token &token)
 {
 	std::ostringstream oss;
-	oss << "token type: " << to_string(token.ttype) << ", value: " << ncr::to_string(token.range(), " ", "", "");
+	oss << "token type: " << to_string(token.ttype) << ", value: " << ncr::to_string(token.span(), {.sep=" ", .beg="", .end=""});
 	return oss.str();
 }
 
@@ -2374,11 +2480,12 @@ to_string(const token &token)
 struct tokenizer
 {
 	// reference to the input data
-	const u8_const_subrange &data;
+	const u8* data_start;
+	const u8* data_end;
 
 	// iterators to track start and end of a token. also called 'cursor'
-	u8_const_iterator  tok_start;
-	u8_const_iterator  tok_end;
+	const u8 * tok_start;
+	const u8 * tok_end;
 
 	// buffer and position within the buffer for all tokens that were read. Note
 	// that the buffer is not pruned at the moment and thus lives as long as the
@@ -2398,7 +2505,11 @@ struct tokenizer
 	};
 
 
-	tokenizer(u8_const_subrange &_data) : data(_data), tok_start(data.begin()), tok_end(data.begin()) {}
+	 tokenizer(const u8* begin, const u8* end)
+	 	 : data_start(begin), data_end(end)
+	 	 , tok_start(begin), tok_end(end) {}
+
+	// tokenizer(u8_span &_data) : data(_data), tok_start(data.begin()), tok_end(data.begin()) {}
 
 
 	// determine the punctuation type of the symbol under the cursor
@@ -2456,6 +2567,16 @@ struct tokenizer
 		return false;
 	}
 
+	inline bool
+	is_bool_literal(const u8* first , const u8* last, bool &value) const
+	{
+		auto subspan = u8_const_span(first, std::distance(first, last));
+
+		if (equals(subspan, "False")) { value = false; return true; }
+		if (equals(subspan, "True"))  { value = true;  return true; }
+		return false;
+	}
+
 
 	inline bool
 	is_whitespace(u8 sym) const
@@ -2473,7 +2594,7 @@ struct tokenizer
 		//       also comment in parse()
 		restore_point rp;
 		token tok;
-		if (tok_start == data.end() || get_next_token(tok, &rp) == result::end_of_input)
+		if (tok_start == data_end || get_next_token(tok, &rp) == result::end_of_input)
 			return true;
 		restore(rp);
 		return false;
@@ -2483,18 +2604,18 @@ struct tokenizer
 	result
 	__fetch_token(token &tok)
 	{
-		if (tok_start == data.end())
+		if (tok_start == data_end)
 			return result::end_of_input;
 
 		// ignore whitespace
 		if (is_whitespace(*tok_start)) {
 			do {
 				++tok_start;
-				if (tok_start == data.end())
+				if (tok_start == data_end)
 					break;
 			} while (is_whitespace(*tok_start));
 			tok_end = tok_start;
-			if (tok_start == data.end())
+			if (tok_start == data_end)
 				return result::end_of_input;
 		}
 
@@ -2536,7 +2657,7 @@ struct tokenizer
 		if (*tok_start == '\'' || *tok_start == '\"') {
 			u8 str_delim = *tok_start;
 			tok_end = tok_start;
-			while (++tok_end != data.end()) {
+			while (++tok_end != data_end) {
 				if (*tok_end == str_delim)
 					break;
 			}
@@ -2546,7 +2667,7 @@ struct tokenizer
 			tok.end   = tok_end;
 
 			// test if string is finished
-			if (tok_end == data.end() || *tok_end != str_delim)
+			if (tok_end == data_end || *tok_end != str_delim)
 				return result::incomplete_token;
 
 			tok_start = ++tok_end;
@@ -2554,7 +2675,7 @@ struct tokenizer
 		}
 
 		// read everything until a punctuation or whitespace
-		while (tok_end != data.end()) {
+		while (tok_end != data_end) {
 			token::type ttype;
 			if (*tok_end == ' ' || get_punctuation_type(*tok_end, ttype))
 				break;
@@ -2574,7 +2695,7 @@ struct tokenizer
 				tok.ttype = token::type::float_literal;
 			else if (is_bool_literal(tok.begin, tok.end, tok.value.b))
 				tok.ttype = token::type::bool_literal;
-			else if (equals(tok.begin, tok.end, "None"))
+			else if (equals(u8_const_span(tok.begin, std::distance(tok.begin, tok.end)), "None"))
 				tok.ttype = token::type::none_literal;
 			else
 				// we could not determine this type.
@@ -2630,6 +2751,8 @@ struct tokenizer
 	void restore(restore_point bpoint) { buffer_pos = bpoint; }
 
 };
+
+
 
 
 
@@ -2711,10 +2834,10 @@ struct pyparser
 		type               dtype  {type::uninitialized};
 
 		// where this type / context starts in the input range
-		u8_const_iterator  begin;
+		const u8* begin;
 
 		// where this type / context ends
-		u8_const_iterator  end;
+		const u8* end;
 
 		// in case of a group (kvpairs, lists, etc.), this contains the group's
 		// children. In case of a key-value pair, there will be 2 children:
@@ -2729,7 +2852,15 @@ struct pyparser
 		} value;
 
 		// access to the range within the input which this parse_result captures
-		u8_const_subrange range() { return u8_const_subrange(begin, end); }
+		u8_const_span span() { return u8_const_span(begin, std::distance(begin, end)); }
+
+
+		inline bool
+		equals(const std::string_view &str)
+		{
+			return ::ncr::numpy::equals(this->begin, this->end, str);
+		}
+
 	};
 
 
@@ -3121,14 +3252,14 @@ struct pyparser
 
 
 	std::unique_ptr<parse_result>
-	parse(u8_const_subrange &input)
+	parse(u8_const_span input)
 	{
 		// tokenizer is a member, but lives only within this scope. we could, of
 		// course call delete before each return, but that'd be too easy. We
 		// could also use another local unique_ptr and move tokens into it, i.e.
 		//    auto ptr = std::make_unique<Foo>(std::move(*tokens));
 		// but that looks really ugly.
-		tokens = new tokenizer{input};
+		tokens = new tokenizer{input.data(), input.data() + input.size()};
 		memory_guard<tokenizer> guard(tokens);
 
 		auto ptr = std::make_unique<parse_result>();
@@ -3151,8 +3282,10 @@ struct pyparser
 	std::unique_ptr<parse_result>
 	parse(const u8_vector &input)
 	{
-		auto sr = u8_const_subrange(input.cbegin(), input.cend());
-		return parse(sr);
+		return parse(u8_const_span(input.data(), input.size()));
+
+		// auto sr = u8_const_subrange(input.cbegin(), input.cend());
+		//return parse(u8_span(input.data(), input.size()));
 	}
 
 };
@@ -3418,7 +3551,7 @@ toggle_bit(const T v, const U N)
  * With the macro below, this will be possible.
  */
 #define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
-	inline ENUM_T operator~(ENUM_T a) { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
+	inline ENUM_T operator~(ENUM_T a)              { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
 	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
 	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
 	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
@@ -3749,7 +3882,8 @@ namespace zip {
 
 	// mode for file opening.
 	// TODO: currently, reading and writing are treated mutually exclusive. not
-	//       clear if this is the best way to treat this
+	//       clear if this is the best way to treat this. Also, when opening for
+	//       writing, the file will be truncated at least in the libzip backend
 	enum class filemode : unsigned {
 		read   = 1 << 0,
 		write  = 1 << 1
@@ -3815,96 +3949,21 @@ namespace zip {
  *
  */
 
-/*
- * This comment is primarily for informational purposes. The interested reader
- * might find it useful, though.
- *
- * numpy character type descriptions
- * =================================
- *
- * The following is a list of the built-in types in numpy. Note that the numpy
- * character is not necessarily used in the export. That is, numpy.save uses the
- * array interface protocol. This protocol specifies signed and unsigned
- * integers with an i and u, respectively, folllowed by the number of bytes. The
- * protocol does not use other characters, which can be used within numpy, such
- * as 'l' or 'q'.
- *
- * The following is the list of character symbols used in the array protocol
- * see also https://numpy.org/doc/stable/reference/arrays.dtypes.html#arrays-dtypes-constructing
- * and https://numpy.org/doc/stable/reference/arrays.interface.html#arrays-interface
- *
- *      't'                 bit field
- *      '?'                 boolean
- *      'b'                 (signed) byte
- *      'B'                 unsigned byte
- *      'i'                 (signed) integer
- *      'u'                 unsigned integer
- *      'f'                 floating-point
- *      'c'                 complex-floating point
- *      'm'                 timedelta
- *      'M'                 datetime
- *      'O'                 (Python) objects
- *      'S', 'a'            zero-terminated bytes (not recommended)
- *      'U'                 Unicode string
- *      'V'                 raw data (void)
- *
- * Moreover, the array interface description consists of 3 parts: character
- * describing the byte order, character code for the basic type, and an integer
- * describing the number of bytes the data type uses.
- *
- * Numpy accepts further characters in their dtype constructor. While they are
- * not found in the array protocol, it might be helpful to have the list and
- * their corresponding C++ types.
- *
- *      numpy name           numpy chr    c/c++ type or equivalent
- *
- *      byte                 b            i8
- *      short                h            i16
- *      int                  i            i32
- *      long                 l            i64
- *      long long            q            long long int
- *      unsigned byte        B            u8
- *      unsigned short       H            u16
- *      unsigned int         I            u32
- *      unsigned long        L            u64
- *      unsigned long long   Q            unsigned long long int
- *
- *      half                 e            std::float16_t / _Float16
- *      single               f            std::float32_t / float
- *      double               d            std::float64_t / double
- *      long double          g            std::float128_t / __float128 / long double
- *
- *      csingle              F            complex64 (2x float32 / float)
- *      cdouble              D            complex128 (2x float64 / double)
- *      clongdouble          G            complex256 (2x long double)
- *
- *      bool                 ?            bool
- *      datetime64           M            maybe use time_point in microseconds based on uint64_t
- *      timedelta64          m            maybe use duration in microseconds based on uint64_t
- *      object_              o
- *
- *      string_, bytes_      S
- *      unicode_, str_       U            unicode string
- *
- * For more information see https://numpy.org/doc/stable/reference/arrays.scalars.html#arrays-scalars-built-in
- *
- */
 
 
-/*
- * include hell
- */
 
 
 
 namespace ncr { namespace numpy {
+
 
 /*
  * forward declarations and typedefs
  */
 struct npyfile;
 struct npzfile;
-enum class result : u64;
+enum class result: u64;
+enum class source_type: u16;
 
 typedef std::variant<result, ndarray, npzfile> variant_result;
 
@@ -3939,13 +3998,25 @@ concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vecto
 };
 
 template <typename Range, typename Tp>
-concept Writable = std::ranges::output_range<Range, Tp>;
+concept Writable = requires(Range r, Tp value) {
+	// ensure writable to the iterator
+	{ *std::begin(r) = value };
+	// ensure there's and end iterator
+	{ std::end(r) };
+	// ensure its a valid range
+	{ std::begin(r) != std::end(r) };
+};
 
 template <typename T, typename OutputRange>
 concept Readable = requires(T source, OutputRange &&dest, std::size_t size) {
 	{ source.read(dest, size) } -> std::same_as<std::size_t>;
 	{ source.eof() } -> std::same_as<bool>;
 	// TODO: maybe also fail()
+};
+
+template <typename T>
+concept Viewable = requires(T source, std::size_t size) {
+	{ source.view(size) } -> std::same_as<std::span<uint8_t>>;
 };
 
 
@@ -4068,105 +4139,78 @@ clear(npzfile &npz)
 }
 
 
-enum class result : u64 {
-	// everything OK
-	ok                                     = 0,
-	// warnings about missing fields. Note that not all fields are required
-	// and it might not be a problem for an application if they are not present.
-	// However, inform the user about this state
-	warning_missing_descr                  = 1ul << 0,
-	warning_missing_fortran_order          = 1ul << 1,
-	warning_missing_shape                  = 1ul << 2,
-	// error codes. in particular for nested/structured arrays, it might be
-	// helpful to know precisely what went wrong.
-	error_wrong_filetype                   = 1ul << 3,
-	error_file_not_found                   = 1ul << 4,
-	error_file_exists                      = 1ul << 5,
-	error_file_open_failed                 = 1ul << 6,
-	error_file_truncated                   = 1ul << 7,
-	error_file_write_failed                = 1ul << 8,
-	error_file_read_failed                 = 1ul << 9,
-	error_file_close                       = 1ul << 10,
-	error_unsupported_file_format          = 1ul << 11,
-	error_duplicate_array_name             = 1ul << 12,
+#define NCR_NUMPY_ERROR_CODE_LIST(_)                                          \
+	_(ok                                     , 0)                             \
+	/* warnings about missing fields. Note that not all fields are required   \
+	 * and it might not be a problem for an application if they are not       \
+	 * present. However, inform the user about this state */                  \
+	_(warning_missing_descr                  , 1ul << 0)                      \
+	_(warning_missing_fortran_order          , 1ul << 1)                      \
+	_(warning_missing_shape                  , 1ul << 2)                      \
+	/* error codes. in particular for nested/structured arrays, it might be   \
+	 * helpful to know precisely what went wrong. */                          \
+	_(error_wrong_filetype                   , 1ul << 3)                      \
+	_(error_file_not_found                   , 1ul << 4)                      \
+	_(error_file_exists                      , 1ul << 5)                      \
+	_(error_file_open_failed                 , 1ul << 6)                      \
+	_(error_file_truncated                   , 1ul << 7)                      \
+	_(error_file_write_failed                , 1ul << 8)                      \
+	_(error_file_read_failed                 , 1ul << 9)                      \
+	_(error_file_close                       , 1ul << 10)                     \
+	_(error_unsupported_file_format          , 1ul << 11)                     \
+	_(error_duplicate_array_name             , 1ul << 12)                     \
+	/* */                                                                     \
+	_(error_magic_string_invalid             , 1ul << 13)                     \
+	_(error_version_not_supported            , 1ul << 14)                     \
+	_(error_header_invalid_length            , 1ul << 15)                     \
+	_(error_header_truncated                 , 1ul << 16)                     \
+	_(error_header_parsing_error             , 1ul << 17)                     \
+	_(error_header_invalid                   , 1ul << 18)                     \
+	_(error_header_empty                     , 1ul << 19)                     \
+	/* */                                                                     \
+	_(error_descr_invalid                    , 1ul << 20)                     \
+	_(error_descr_invalid_type               , 1ul << 21)                     \
+	_(error_descr_invalid_string             , 1ul << 22)                     \
+	_(error_descr_invalid_data_size          , 1ul << 23)                     \
+	_(error_descr_list_empty                 , 1ul << 24)                     \
+	_(error_descr_list_invalid_type          , 1ul << 25)                     \
+	_(error_descr_list_incomplete_value      , 1ul << 26)                     \
+	_(error_descr_list_invalid_value         , 1ul << 27)                     \
+	_(error_descr_list_invalid_shape         , 1ul << 28)                     \
+	_(error_descr_list_invalid_shape_value   , 1ul << 29)                     \
+	_(error_descr_list_subtype_not_supported , 1ul << 30)                     \
+	/* */                                                                     \
+	_(error_fortran_order_invalid_value      , 1ul << 31)                     \
+	_(error_shape_invalid_value              , 1ul << 32)                     \
+	_(error_shape_invalid_shape_value        , 1ul << 33)                     \
+	_(error_item_size_mismatch               , 1ul << 34)                     \
+	_(error_data_size_mismatch               , 1ul << 35)                     \
+	_(error_unavailable                      , 1ul << 36)                     \
+    /* */                                                                     \
+	_(error_mmap_failed                      , 1ul << 37)                     \
+	_(error_seek_failed                      , 1ul << 38)                     \
+	_(error_reader_not_open                  , 1ul << 39)                     \
+	_(error_invalid_item_offset              , 1ul << 40)                     \
 
-	error_magic_string_invalid             = 1ul << 13,
-	error_version_not_supported            = 1ul << 14,
-	error_header_invalid_length            = 1ul << 15,
-	error_header_truncated                 = 1ul << 16,
-	error_header_parsing_error             = 1ul << 17,
-	error_header_invalid                   = 1ul << 18,
-	error_header_empty                     = 1ul << 19,
+#define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
+	NAME = VALUE,
 
-	error_descr_invalid                    = 1ul << 20,
-	error_descr_invalid_type               = 1ul << 21,
-	error_descr_invalid_string             = 1ul << 22,
-	error_descr_invalid_data_size          = 1ul << 23,
-	error_descr_list_empty                 = 1ul << 24,
-	error_descr_list_invalid_type          = 1ul << 25,
-	error_descr_list_incomplete_value      = 1ul << 26,
-	error_descr_list_invalid_value         = 1ul << 27,
-	error_descr_list_invalid_shape         = 1ul << 28,
-	error_descr_list_invalid_shape_value   = 1ul << 29,
-	error_descr_list_subtype_not_supported = 1ul << 30,
+#define NCR_NUMPY_ERROR_CODE_STRINGIFY(NAME, VALUE) \
+	{result::NAME, #NAME},
 
-	error_fortran_order_invalid_value      = 1ul << 31,
-	error_shape_invalid_value              = 1ul << 32,
-	error_shape_invalid_shape_value        = 1ul << 33,
-	error_item_size_mismatch               = 1ul << 34,
-	error_data_size_mismatch               = 1ul << 35,
-	error_unavailable                      = 1ul << 36,
-};
+// need to bring enum_count into this namespace for the MACRO to work (TODO:
+// fix this)
+template <typename T> constexpr size_t enum_count();
+NCR_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
 
 NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
 
 // map from error code to string for pretty printing the error code. This is a
 // bit more involved than just listing the strings, because result codes can be
 // OR-ed together, i.e. a result code might have several codes that are set.
-constexpr std::array<std::pair<result, const char*>, 38> result_strings = {{
-	{result::ok,                                    "ok"},
-
-	{result::warning_missing_descr,                 "warning_missing_descr"},
-	{result::warning_missing_fortran_order,         "warning_missing_fortran_order"},
-	{result::warning_missing_shape,                 "warning_missing_shape"},
-
-	{result::error_wrong_filetype,                  "error_wrong_filetype"},
-	{result::error_file_not_found,                  "error_file_not_found"},
-	{result::error_file_exists,                     "error_file_exists"},
-	{result::error_file_open_failed,                "error_file_open_failed"},
-	{result::error_file_truncated,                  "error_file_truncated"},
-	{result::error_file_write_failed,               "error_file_write_failed"},
-	{result::error_file_read_failed,                "error_file_read_failed"},
-	{result::error_file_close,                      "error_file_close"},
-	{result::error_unsupported_file_format,         "error_unsupported_file_format"},
-	{result::error_duplicate_array_name,            "error_duplicate_array_name"},
-
-	{result::error_magic_string_invalid,            "error_magic_string_invalid"},
-	{result::error_version_not_supported,           "error_version_not_supported"},
-	{result::error_header_invalid_length,           "error_header_invalid_length"},
-	{result::error_header_truncated,                "error_header_truncated"},
-	{result::error_header_parsing_error,            "error_header_parsing_error"},
-	{result::error_header_invalid,                  "error_header_invalid"},
-	{result::error_header_empty,                    "error_header_empty"},
-
-	{result::error_descr_invalid,                   "error_descr_invalid"},
-	{result::error_descr_invalid_type,              "error_descr_invalid_type"},
-	{result::error_descr_invalid_string,            "error_descr_invalid_string"},
-	{result::error_descr_invalid_data_size,         "error_descr_invalid_data_size"},
-	{result::error_descr_list_empty,                "error_descr_list_empty"},
-	{result::error_descr_list_invalid_type,         "error_descr_list_invalid_type"},
-	{result::error_descr_list_incomplete_value,     "error_descr_list_incomplete_value"},
-	{result::error_descr_list_invalid_value,        "error_descr_list_invalid_value"},
-	{result::error_descr_list_invalid_shape,        "error_descr_list_invalid_shape"},
-	{result::error_descr_list_invalid_shape_value,  "error_descr_list_invalid_shape_value"},
-	{result::error_descr_list_subtype_not_supported,"error_descr_list_subtype_not_supported"},
-
-	{result::error_fortran_order_invalid_value,     "error_fortran_order_invalid_value"},
-	{result::error_shape_invalid_value,             "error_shape_invalid_value"},
-	{result::error_shape_invalid_shape_value,       "error_shape_invalid_shape_value"},
-	{result::error_item_size_mismatch,              "error_item_size_mismatch"},
-	{result::error_data_size_mismatch,              "error_data_size_mismatch"},
-	{result::error_unavailable,                     "error_unavailable"}
+constexpr std::array<std::pair<result, const char*>, enum_count<result>()>
+result_strings = {{
+	NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_STRINGIFY)
 }};
 
 
@@ -4211,32 +4255,6 @@ to_string(result res)
 }
 
 
-inline byte_order
-to_byte_order(const u8 chr)
-{
-	switch (chr) {
-	case '>': return byte_order::big;
-	case '<': return byte_order::little;
-	case '=': return byte_order::native;
-	case '|': return byte_order::not_relevant;
-	default:  return byte_order::invalid;
-	};
-}
-
-
-inline std::ostream&
-operator<<(std::ostream &os, const byte_order &order)
-{
-	switch (order) {
-	case byte_order::little:       os << '<'; break;
-	case byte_order::big:          os << '>'; break;
-	case byte_order::not_relevant: os << '|'; break;
-	default:                       os.setstate(std::ios_base::failbit);
-	};
-	return os;
-}
-
-
 /*
  * buffer_read - wrapper for vectors/buffers to make them a ReadableSource
  */
@@ -4248,8 +4266,8 @@ struct buffer_reader
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
-		auto first = std::ranges::begin(dest);
-        auto last = std::ranges::end(dest);
+		auto first = std::begin(dest);
+        auto last = std::end(dest);
         size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
 		size = (_pos + size > _data.size()) ? _data.size() - _pos : size;
 		std::copy_n(_data.begin() + _pos, size, first);
@@ -4286,8 +4304,8 @@ struct ifstream_reader
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
-		auto first = std::ranges::begin(dest);
-		auto last = std::ranges::end(dest);
+		auto first = std::begin(dest);
+		auto last = std::end(dest);
 		size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
 
 		_stream.read(reinterpret_cast<char *>(&(*first)), size);
@@ -4429,16 +4447,15 @@ parse_descr_string(pyparser::parse_result *descr, dtype &dt)
 	if (descr->dtype != pyparser::type::string)
 		return result::error_descr_invalid_string;
 
-	auto range = descr->range();
-	if (range.size() < 3)
+	if (std::distance(descr->begin, descr->end) < 3)
 		return result::error_descr_invalid_string;
 
 	// first character is the byte order
-	dt.endianness = to_byte_order(range[0]);
+	dt.endianness = to_byte_order(descr->begin[0]);
 	// second character is the type code
-	dt.type_code  = range[1];
+	dt.type_code  = descr->begin[1];
 	// remaining characters are the byte size of the data type
-	std::string str(range.begin() + 2, range.end());
+	std::string str(descr->begin + 2, descr->end);
 
 	// TODO: use something else than strtol
 	char *end;
@@ -4596,7 +4613,7 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 			return result::error_header_invalid;
 
 		// descr, might be a string or a list of tuples
-		if (equals(kv->nodes[0]->range(), "descr")) {
+		if (kv->nodes[0]->equals("descr")) {
 			auto tmp = parse_descr(kv->nodes[1].get(), dt);
 			if (tmp != result::ok)
 				return tmp;
@@ -4604,7 +4621,7 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 		}
 
 		// determine if the array data is in fortran order or not
-		if (equals(kv->nodes[0]->range(), "fortran_order")) {
+		if (kv->nodes[0]->equals("fortran_order")) {
 			if (kv->nodes[1]->dtype != pyparser::type::boolean)
 				return result::error_fortran_order_invalid_value;
 			order = kv->nodes[1]->value.b ? storage_order::col_major : storage_order::row_major;
@@ -4613,7 +4630,7 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 
 		// read the shape of the array (NOTE: this is *not* the shape of a data
 		// type, but the shape of the array)
-		if (equals(kv->nodes[0]->range(), "shape")) {
+		if (kv->nodes[0]->equals("shape")) {
 			if (kv->nodes[1]->dtype != pyparser::type::tuple)
 				return result::error_shape_invalid_value;
 
@@ -4869,7 +4886,7 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 	// open the file for file type test
 	result res;
 	std::ifstream f;
-	if ((res = open_fstream(filepath, f)) != result::ok)
+	if ((res = open_fstream(filepath, f), is_error(res)))
 		return res;
 
 	// test if this is a PKzip file, also close it again
@@ -4880,19 +4897,6 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 
 	// let the zip backend handle this file from now on
 	return from_zip_archive(filepath, npz);
-}
-
-
-
-inline void
-read_bytes(std::ifstream& file, std::size_t num_bytes, const std::function<void(u8_vector)>& callback)
-{
-	u8_vector buffer(num_bytes);
-	if (file.read(reinterpret_cast<char*>(buffer.data()), num_bytes)) {
-		callback(std::move(buffer));
-	} else {
-		// Handle read error
-	}
 }
 
 
@@ -4911,7 +4915,7 @@ inline result
 open_npy(std::filesystem::path filepath, std::ifstream &file)
 {
 	result res;
-	if ((res = open_fstream(filepath, file)) != result::ok)
+	if ((res = open_fstream(filepath, file), is_error(res)))
 		return res;
 
 	// test if this is a PKzip file, and if yes then we exit early. for loading
@@ -4939,19 +4943,13 @@ get_file_size(std::ifstream &is)
 
 
 /*
- * from_nyp - read a file into a container
- *
- * When reading a file into an ndarray, we read the file in one go into a buffer
- * and then process it.
+ * from_npy_ifstream - read an already opened ifstream into an ndarray
  */
 template <NDArray NDArrayType, bool unsafe_read = true>
 result
-from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
+from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullptr)
 {
-	// try to open the file
 	result res = result::ok;
-	std::ifstream file;
-	if ((res = open_npy(filepath, file), is_error(res))) return res;
 
 	// read the file into a vector. the c++ iostream interface is horrible to
 	// work with and considered bad design by many developers. We'll load the
@@ -4975,9 +4973,28 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 
 	// done
 	return res;
-
-	return result::ok;
 }
+
+
+/*
+ * from_nyp - read a file into a container
+ *
+ * When reading a file into an ndarray, we read the file in one go into a buffer
+ * and then process it.
+ */
+template <NDArray NDArrayType, bool unsafe_read = true>
+result
+from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
+{
+	// try to open the file
+	result res = result::ok;
+	std::ifstream file;
+	if ((res = open_npy(filepath, file), is_error(res))) return res;
+
+	return from_npy_ifstream(file, array, npy);
+}
+
+
 
 
 template <typename T, typename F, typename G>
@@ -5115,20 +5132,25 @@ inline npzfile get_npzfile(variant_result &&res) { return std::get<npzfile>(std:
  *
  * In case the file cannot be loaded, i.e. it's not an npz or npy file, the
  * variant will hold a corresponding error code
+ *
+ * TODO: memory-mapped variant, which then moves the file descriptor *into* the
+ *       array (this way the array will be backed by the memory mapped data,
+ *       similar to numpy.memmap)
  */
 inline variant_result
 load(std::filesystem::path filepath)
 {
 	// open the file
 	result res;
-	std::ifstream f;
-	if ((res = open_fstream(filepath, f)) != result::ok) {
+	std::ifstream file;
+	if ((res = open_fstream(filepath, file)) != result::ok) {
 		return res;
 	}
 
 	// return the full npz if this is an archive, so that users can work with
 	// the result similar to what they would get from numpy.load
-	if (is_zip_file(f)) {
+	if (is_zip_file(file)) {
+		file.close();
 		npzfile npz;
 		if ((res = from_npz(filepath, npz)) != result::ok)
 			return res;
@@ -5136,8 +5158,12 @@ load(std::filesystem::path filepath)
 	}
 
 	// users are usually only interested in the array when loading from .npy
+	// TODO: from_npy opens the file, again. instead of closing it and opening
+	// it immediately again, maybe use from_stream to read the file from an
+	// ifstream or pass the ifstream f forward.
 	ndarray arr;
-	if ((res = from_npy(filepath, arr, nullptr)) != result::ok) {
+	file.seekg(0);
+	if ((res = from_npy_ifstream(file, arr, nullptr), is_error(res))) {
 		// in case the magic string is invalid, then this is not a numpy file
 		if (res == result::error_magic_string_invalid)
 			return result::error_unsupported_file_format;
@@ -5349,6 +5375,9 @@ savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrap
 		_args.push_back({std::string("arr_") + std::to_string(i++), arg});
 	return to_zip_archive(filepath, std::move(_args), true, overwrite, compression_level);
 }
+
+
+
 
 
 }} // ncr::numpy

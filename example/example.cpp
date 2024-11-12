@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
+#define NCR_ENABLE_STREAM_OPERATORS
 #include "ncr_numpy.hpp"
 
 
@@ -704,7 +705,7 @@ example_callbacks()
 	// format.
 	//
 	if ((res = numpy::from_npy("assets/in/simpletensor2.npy",
-		[&](const numpy::dtype &, const u64_vector& shape, const numpy::storage_order& order, u64 index, u8_vector item){
+		[&](const numpy::dtype &, const u64_vector& shape, const storage_order& order, u64 index, u8_vector item){
 			// To exit early, simply return false from within the callback.
 			// for instance when we read enough data
 			if (index >= max_count)
@@ -714,9 +715,9 @@ example_callbacks()
 			// could also use dtype to determine if the data is actually in the
 			// format that we expect, and if not, exit early.
 			i64 value = *reinterpret_cast<i64*>(item.data());
-			auto multi_index = numpy::unravel_index(index, shape, order);
+			auto multi_index = unravel_index(index, shape, order);
 			// use to_string's beg and end values to add space and :
-			std::cout << "Item " << index << ncr::to_string(multi_index, ",", " [", "]: ") << value << "\n";
+			std::cout << "Item " << index << to_string(multi_index, {.end="]: "}) << value << "\n";
 			sum += value;
 
 			// we return true to let the backend know that we want to have more
@@ -761,7 +762,7 @@ example_callbacks()
 		[&](u64_vector index, u64 value){
 			if (i++ >= max_count)
 				return false;
-			std::cout << "Item" << ncr::to_string(index, ",", " [", "]: ") << value << "\n";
+			std::cout << "Item" << ncr::to_string(index, {.end="]: "}) << value << "\n";
 			sum += value;
 			return true;
 		})) != numpy::result::ok)
@@ -783,7 +784,7 @@ example_callbacks()
 	sum = 0;
 	i = 0;
 	if ((res = numpy::from_npy<u64>("assets/in/simpletensor2.npy",
-		[&](const numpy::dtype &dt, const u64_vector& shape, const numpy::storage_order& order){
+		[&](const numpy::dtype &dt, const u64_vector& shape, const storage_order& order){
 			// This callback will be invoked first, so it is possible to use it
 			// to setup other data, or emit information, or exit early if the
 			// shape or contained data type is not what was expected.
@@ -796,7 +797,7 @@ example_callbacks()
 		[&](u64_vector index, u64 value){
 			if (i++ >= max_count)
 				return false;
-			std::cout << "Item" << ncr::to_string(index, ",", " [", "]: ") << value << "\n";
+			std::cout << "Item" << to_string(index, {.end="]: "}) << value << "\n";
 			sum += value;
 			return true;
 		})) != numpy::result::ok)
