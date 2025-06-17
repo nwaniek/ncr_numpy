@@ -7,20 +7,20 @@
  * that is required to work with numpy files.
  *
  * SPDX-License-Identifier: MIT
- * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
+ * SPDX-FileCopyrightText: 2023-2025 Nicolai Waniek <n@rochus.net>
  *
  * MIT License
- *
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- *
+ * 
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.5.4
+#define NCR_NUMPY_VERSION 0.5.5
 
 #include <cstring>
 #include <cassert>
@@ -43,24 +43,25 @@
 #include <cstdint>
 #include <complex>
 #include <stdfloat>
+#include <ranges>
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
+#include <cstddef>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <optional>
+#include <algorithm>
 #include <memory>
 #include <array>
 #include <sstream>
 #include <filesystem>
 #include <fstream>
-#include <algorithm>
 #include <iterator>
 #include <map>
-#include <variant>
 #include <unordered_set>
-#include <sys/mman.h>
-#include <fcntl.h>
 #include <bit>
-#include <cstddef>
-#include <optional>
 #include <zip.h>
 
 /*
@@ -1151,6 +1152,649 @@ operator<< (std::ostream &os, const dtype &dt)
 
 #endif /* _f7e9e094e0ba4453850c999f0e7f2a56_ */
 
+#ifndef _65fc1481d8d149029547d3932c93f2e0_
+#define _65fc1481d8d149029547d3932c93f2e0_
+
+
+
+/*
+ * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
+ *
+ * This macro expands into functions for bit-wise and binary operations on
+ * enums, e.g. given two enum values a and b, one might want to write `a |= b;`.
+ * With the macro below, this will be possible.
+ */
+#define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
+	inline ENUM_T operator~(ENUM_T a)              { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
+	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
+	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
+	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
+	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
+	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
+	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); }
+
+
+/*
+ * NCR_DEFINE_FUNCTION_ALIAS - define a function alias for another function
+ *
+ * Using perfect forwarding, this creates a function with a novel name that
+ * forwards all the arguments to the original function
+ *
+ * Note: In case there are multiple overloaded functions, this macro can be used
+ *       _after_ the last overloaded function itself.
+ */
+#define NCR_DEFINE_FUNCTION_ALIAS(ALIAS_NAME, ORIGINAL_NAME)           \
+	template <typename... Args>                                        \
+	inline auto ALIAS_NAME(Args &&... args)                            \
+		noexcept(noexcept(ORIGINAL_NAME(std::forward<Args>(args)...))) \
+		-> decltype(ORIGINAL_NAME(std::forward<Args>(args)...))        \
+	{                                                                  \
+		return ORIGINAL_NAME(std::forward<Args>(args)...);             \
+	}
+
+
+/*
+ * NCR_DEFINE_FUNCTION_ALIAS_EXT - similar as above, but with additional
+ * template arguments that are not captured in the case above.
+ *
+ * For instance, if one implements a function that gets specialized on its
+ * return type, then the this could be used.
+ *
+ * Example:
+ *
+ *     // some template which has a template arguemnt for the return type
+ *     template <typename T, typename U> T ncr_some_fun(int x);
+ *
+ *     // specialization
+ *     template <typename U>
+ *     float ncr_some_fun(int x)
+ *     {
+ *     	return (float)x;
+ *     }
+ *
+ *     NCR_DEFINE_SHORT_NAME_EXT(some_fun, ncr_some_fun)
+ */
+#define NCR_DEFINE_FUNCTION_ALIAS_EXT(ALIAS_NAME, ORIGINAL_NAME)                 \
+	template <typename... Args2, typename... Args>                               \
+	inline auto ALIAS_NAME(Args &&... args)                                      \
+		noexcept(noexcept(ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...))) \
+		-> decltype(ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...))        \
+	{                                                                            \
+		return ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...);             \
+	}
+
+#define NCR_DEFINE_TYPE_ALIAS(ALIAS_NAME, ORIGINAL_NAME) \
+	using ALIAS_NAME = ORIGINAL_NAME
+
+
+/*
+ * NCR_DEFINE_SHORT_NAME - define a short name for a longer one
+ *
+ * This allows to easily define short function names, e.g. without the ncr_
+ * prefix, for a given function. Not the the alias definition will only take
+ * place if NCR_ENABLE_SHORT_NAMES is defined.
+ */
+#ifdef NCR_ENABLE_SHORT_NAMES
+	#define NCR_DEFINE_SHORT_FN_NAME(SHORT_NAME, LONG_NAME) \
+		NCR_DEFINE_FUNCTION_ALIAS(SHORT_NAME, LONG_NAME)
+
+	#define NCR_DEFINE_SHORT_FN_NAME_EXT(SHORT_FN_NAME, LONG_FN_NAME) \
+		NCR_DEFINE_FUNCTION_ALIAS_EXT(SHORT_FN_NAME, LONG_FN_NAME)
+
+	#define NCR_DEFINE_SHORT_TYPE_ALIAS(SHORT_NAME, LONG_NAME) \
+		NCR_DEFINE_TYPE_ALIAS(SHORT_NAME, LONG_NAME)
+#else
+	#define NCR_DEFINE_SHORT_FN_NAME(_0, _1)
+	#define NCR_DEFINE_SHORT_FN_NAME_EXT(_0, _1)
+	#define NCR_DEFINE_SHORT_TYPE_ALIAS(_0, _1)
+#endif
+
+
+/*
+ * Count the number of arguments to a variadic macro. Up to 64 arguments are
+ * supported
+ */
+#define NCR_COUNT_ARGS2(X,_64,_63,_62,_61,_60,_59,_58,_57,_56,_55,_54,_53,_52,_51,_50,_49,_48,_47,_46,_45,_44,_43,_42,_41,_40,_39,_38,_37,_36,_35,_34,_33,_32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17,_16,_15,_14,_13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,_1,N,...) N
+#define NCR_COUNT_ARGS(...) NCR_COUNT_ARGS2(0, __VA_ARGS__ ,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)
+
+
+/*
+ * Suppress warnings for unused arguments. Up to 10 arguments are supported in
+ * the variadic version NCR_UNUSED
+ */
+#define NCR_UNUSED_1(X)        (void)X;
+#define NCR_UNUSED_2(X0, X1)   NCR_UNUSED_1(X0); NCR_UNUSED_1(X1)
+#define NCR_UNUSED_3(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_2(__VA_ARGS__)
+#define NCR_UNUSED_4(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_3(__VA_ARGS__)
+#define NCR_UNUSED_5(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_4(__VA_ARGS__)
+#define NCR_UNUSED_6(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_5(__VA_ARGS__)
+#define NCR_UNUSED_7(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_6(__VA_ARGS__)
+#define NCR_UNUSED_8(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_7(__VA_ARGS__)
+#define NCR_UNUSED_9(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_8(__VA_ARGS__)
+#define NCR_UNUSED_10(X0, ...) NCR_UNUSED_1(X0); NCR_UNUSED_9(__VA_ARGS__)
+
+#define NCR_UNUSED_INDIRECT3(N, ...)  NCR_UNUSED_ ## N(__VA_ARGS__)
+#define NCR_UNUSED_INDIRECT2(N, ...)  NCR_UNUSED_INDIRECT3(N, __VA_ARGS__)
+#define NCR_UNUSED(...)               NCR_UNUSED_INDIRECT2(NCR_COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
+
+
+
+/*
+ * macro to define an enum class of a specific underlying type, and also
+ * generating a template specialization that returns the number of values in the
+ * enum class.
+ */
+template <typename T> constexpr size_t enum_count();
+
+#define NCR_ENUM_CLASS(EnumName, UnderlyingType, ...) \
+	enum class EnumName : UnderlyingType { \
+		__VA_ARGS__ \
+	}; \
+	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
+
+/*
+ * A simple define to reduce the verbosity to declare a tuple. This is
+ * particularly useful, for instance, in calls to random.hpp:random_coord.
+ * In this example, the template accepts a variadic number of tuples, e.g.
+ *
+ *     auto xlim = std::tuple{0, 1};
+ *     auto ylim = std::tuple{0, 10};
+ *     auto coord = random_coord(rng, xlim, ylim);
+ *
+ * It would be better to avoid the temporary variables. However,
+ * brace-initializers wont work, as there is no clear (read: acceptably sane)
+ * way to turn an initializer_list into a tuple. With the following macro, it is
+ * actually possible to succinctly write
+ *
+ *     auto coord = random_coord(_T(0, 1), _T(0, 10));
+ *
+ * without any local declaration of temporaries, or overly long calls that
+ * include the specific tuple type.
+ */
+#ifndef _tup
+	#define _tup(...) std::tuple{__VA_ARGS__}
+#endif
+
+
+
+namespace ncr {
+
+/*
+ * ensure at compile time that one or more types are PODs
+ */
+template <typename T>
+constexpr void ensure_pod1() {
+	static_assert(std::is_trivial_v<T>,         "Type is not trivial!");
+	static_assert(std::is_standard_layout_v<T>, "Type does not have a standard layout!");
+}
+template <typename... Types>
+constexpr void ensure_pod() { (ensure_pod1<Types>(), ...); }
+
+
+/*
+ * compile time count of elements in an array. If standard library is used,
+ * could also use std::size instead.
+ */
+template <std::size_t N, class T>
+constexpr std::size_t len(T(&)[N]) { return N; }
+
+
+/*
+ * to_underlying - Get the underlying type of some type
+ *
+ * This is an implementation of C++23's to_underlying function, which is not yet
+ * available in C++20 but handy for casting enum-structs to their underlying
+ * type (see NCR_DEFINE_ENUM_FLAG_OPERATORS for an example).
+ */
+template <typename E>
+constexpr typename std::underlying_type<E>::type
+to_underlying(E e) noexcept {
+    return static_cast<typename std::underlying_type<E>::type>(e);
+}
+
+
+/*
+ * get_index_of - get the index of a pointer to T in a vector of T
+ *
+ * This function returns an optional to indicate if the pointer to T was found
+ * or not.
+ */
+template <typename T>
+inline std::optional<size_t>
+get_index_of(std::vector<T*> vec, T *needle)
+{
+	for (size_t i = 0; i < vec.size(); i++)
+		if (vec[i] == needle)
+			return i;
+	return {};
+}
+
+
+/*
+ * determine if a container contains a certain element or not
+ */
+template <typename ContainerT, typename U>
+inline bool
+contains(const ContainerT &container, const U &needle)
+{
+	auto it = std::find(container.begin(), container.end(), needle);
+	return it != container.end();
+}
+
+
+/*
+ * hexdump - generate a hexdump for a buffer similar to hex editors
+ */
+inline void
+hexdump(std::ostream& os, const std::vector<uint8_t> &data)
+{
+	std::ios old_state(nullptr);
+	old_state.copyfmt(os);
+
+	const size_t bytes_per_line = 16;
+	for (size_t offset = 0; offset < data.size(); offset += bytes_per_line) {
+		os << std::setw(8) << std::setfill('0') << std::hex << offset << ": ";
+		for (size_t i = 0; i < bytes_per_line; ++i) {
+			// missing bytes will be replaced with whitespace
+			if (offset + i < data.size())
+				os << std::setw(2) << std::setfill('0') << std::hex << static_cast<i32>(data[offset + i]) << ' ';
+			else
+				os << "   ";
+		}
+		os << " | ";
+		for (size_t i = 0; i < bytes_per_line; ++i) {
+			if (offset + i >= data.size())
+				break;
+
+			// non-printable characters will be replaced with '.'
+			char c = data[offset + i];
+			if (c < 32 || c > 126)
+				c = '.';
+			os << c;
+		}
+		os << "\n";
+	}
+	// reset to default
+	os << std::setfill(os.widen(' '));
+	os.copyfmt(old_state);
+}
+
+
+} // namespace ncr
+
+#endif /* _65fc1481d8d149029547d3932c93f2e0_ */
+
+/*
+ * ncr/npyerror.hpp - return codes used throughout ncr::numpy
+ *
+ *
+ */
+
+#ifndef _8c9e4fd8e3de4665b327b3e0a6481c9f_
+#define _8c9e4fd8e3de4665b327b3e0a6481c9f_
+
+
+namespace ncr { namespace numpy {
+
+#define NCR_NUMPY_ERROR_CODE_LIST(_)                                          \
+	_(ok                                     , 0)                             \
+	/* warnings about missing fields. Note that not all fields are required   \
+	 * and it might not be a problem for an application if they are not       \
+	 * present. However, inform the user about this state */                  \
+	_(warning_missing_descr                  , 1ul << 0)                      \
+	_(warning_missing_fortran_order          , 1ul << 1)                      \
+	_(warning_missing_shape                  , 1ul << 2)                      \
+	/* error codes. in particular for nested/structured arrays, it might be   \
+	 * helpful to know precisely what went wrong. */                          \
+	_(error_wrong_filetype                   , 1ul << 3)                      \
+	_(error_file_not_found                   , 1ul << 4)                      \
+	_(error_file_exists                      , 1ul << 5)                      \
+	_(error_file_open_failed                 , 1ul << 6)                      \
+	_(error_file_truncated                   , 1ul << 7)                      \
+	_(error_file_write_failed                , 1ul << 8)                      \
+	_(error_file_read_failed                 , 1ul << 9)                      \
+	_(error_file_close                       , 1ul << 10)                     \
+	_(error_unsupported_file_format          , 1ul << 11)                     \
+	_(error_duplicate_array_name             , 1ul << 12)                     \
+	/* */                                                                     \
+	_(error_magic_string_invalid             , 1ul << 13)                     \
+	_(error_version_not_supported            , 1ul << 14)                     \
+	_(error_header_invalid_length            , 1ul << 15)                     \
+	_(error_header_truncated                 , 1ul << 16)                     \
+	_(error_header_parsing_error             , 1ul << 17)                     \
+	_(error_header_invalid                   , 1ul << 18)                     \
+	_(error_header_empty                     , 1ul << 19)                     \
+	/* */                                                                     \
+	_(error_descr_invalid                    , 1ul << 20)                     \
+	_(error_descr_invalid_type               , 1ul << 21)                     \
+	_(error_descr_invalid_string             , 1ul << 22)                     \
+	_(error_descr_invalid_data_size          , 1ul << 23)                     \
+	_(error_descr_list_empty                 , 1ul << 24)                     \
+	_(error_descr_list_invalid_type          , 1ul << 25)                     \
+	_(error_descr_list_incomplete_value      , 1ul << 26)                     \
+	_(error_descr_list_invalid_value         , 1ul << 27)                     \
+	_(error_descr_list_invalid_shape         , 1ul << 28)                     \
+	_(error_descr_list_invalid_shape_value   , 1ul << 29)                     \
+	_(error_descr_list_subtype_not_supported , 1ul << 30)                     \
+	/* */                                                                     \
+	_(error_fortran_order_invalid_value      , 1ul << 31)                     \
+	_(error_shape_invalid_value              , 1ul << 32)                     \
+	_(error_shape_invalid_shape_value        , 1ul << 33)                     \
+	_(error_item_size_mismatch               , 1ul << 34)                     \
+	_(error_data_size_mismatch               , 1ul << 35)                     \
+	_(error_unavailable                      , 1ul << 36)                     \
+    /* */                                                                     \
+	_(error_mmap_failed                      , 1ul << 37)                     \
+	_(error_seek_failed                      , 1ul << 38)                     \
+	_(error_reader_not_open                  , 1ul << 39)                     \
+	_(error_invalid_item_offset              , 1ul << 40)                     \
+	_(error_invalid_data_pointer             , 1ul << 41)                     \
+	_(error_munmap_failed                    , 1ul << 42)                     \
+
+#define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
+	NAME = VALUE,
+
+#define NCR_NUMPY_ERROR_CODE_STRINGIFY(NAME, VALUE) \
+	{result::NAME, #NAME},
+
+// need to bring enum_count into this namespace for the MACRO to work (TODO:
+// fix this)
+template <typename T> constexpr size_t enum_count();
+NCR_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
+
+NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
+
+// map from error code to string for pretty printing the error code. This is a
+// bit more involved than just listing the strings, because result codes can be
+// OR-ed together, i.e. a result code might have several codes that are set.
+constexpr inline std::array<std::pair<result, const char*>, enum_count<result>()>
+result_strings = {{
+	NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_STRINGIFY)
+}};
+
+
+inline bool
+is_error(result r)
+{
+	return
+		r != result::ok &&
+		r != result::warning_missing_descr &&
+		r != result::warning_missing_shape &&
+		r != result::warning_missing_fortran_order;
+}
+
+
+struct ErrorContext
+{
+	result      res;
+	const char *failed_function;
+};
+
+
+}} // ncr::numpy::
+
+#endif /* _8c9e4fd8e3de4665b327b3e0a6481c9f_ */
+
+/*
+ * ncr/npybuffers.hpp - some buffer backends for npyfile and ndarray
+ *
+ *
+ */
+
+
+#ifndef _69a274a94acf465aaa21a9e5046fa6ed_
+#define _69a274a94acf465aaa21a9e5046fa6ed_
+
+
+// mmap
+
+
+
+namespace ncr { namespace numpy {
+
+
+/*
+ * mmap'ed file based buffer
+ *
+ * TODO: also store the offset (in bytes) for the actual data
+ */
+struct mmap_buffer
+{
+	uint8_t* data        = nullptr;
+	size_t   size        = 0;
+	size_t   position    = 0;
+	size_t   data_offset = 0;
+};
+
+
+inline result
+open(const char *filepath, mmap_buffer* buf)
+{
+	if (!buf)
+		return result::error_invalid_data_pointer;
+
+	int fd = ::open(filepath, O_RDONLY);
+	if (fd == -1) {
+		return result::error_file_open_failed;
+	}
+
+	buf->size = lseek(fd, 0, SEEK_END);
+	lseek(fd, 0, SEEK_SET);
+	buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ, MAP_PRIVATE, fd, 0);
+	::close(fd);
+	if (buf->data == MAP_FAILED) {
+		buf->size = 0;
+		buf->data = nullptr;
+		return result::error_mmap_failed;
+	}
+	buf->position = 0;
+	return result::ok;
+}
+
+
+inline result
+close(mmap_buffer* buf)
+{
+	if (!buf)
+		return result::error_invalid_data_pointer;
+
+	if (munmap(buf->data, buf->size) == -1)
+		return result::error_munmap_failed;
+
+	buf->size = 0;
+	buf->data = nullptr;
+	buf->position = 0;
+	return result::ok;
+}
+
+
+inline void
+release(mmap_buffer* buf)
+{
+	if (!buf)
+		return;
+
+	close(buf);
+	delete buf;
+}
+
+
+
+/*
+ * raw array based buffer
+ */
+struct raw_buffer
+{
+	uint8_t* data;
+	size_t   size;
+};
+
+
+inline raw_buffer*
+make_raw_buffer(size_t N)
+{
+	auto *buffer = new raw_buffer();
+	buffer->data = new uint8_t[N]{};
+	buffer->size = N;
+	return buffer;
+}
+
+
+inline result
+release(raw_buffer* buf)
+{
+	if (!buf)
+		return result::error_invalid_data_pointer;
+
+	delete[] buf->data;
+	delete buf;
+	return result::ok;
+}
+
+
+/*
+ * vector based buffer
+ */
+struct vector_buffer
+{
+	std::vector<uint8_t> data;
+};
+
+
+inline vector_buffer*
+make_vector_buffer(size_t N)
+{
+	auto* buf = new vector_buffer();
+	buf->data.resize(N);
+	return buf;
+}
+
+inline vector_buffer*
+make_vector_buffer(u8_vector&& other)
+{
+	auto* buf = new vector_buffer();
+	buf->data = std::move(other);
+	return buf;
+}
+
+
+
+inline result
+release(vector_buffer* buf)
+{
+	if (!buf)
+		return result::error_invalid_data_pointer;
+
+	delete buf;
+	return result::ok;
+}
+
+
+
+/*
+ * npybuffer - simple frontend for different buffers
+ *
+ * In case of a regular file I/O or no file I/O at all, an ndarray will simply
+ * store its data within a vector. however, as soon as a file is opened in mmap
+ * mode, we want the actual data to be accessed via the memory mapped file. to
+ * make this flexibly possible within ndarray, internally it only sets the data
+ * pointer corresponding to what the data source actually is (i.e. a vector,
+ * mmap, etc.). all of this could be implanted directly in ndarray, but there's
+ * almost zero cost to separate npybuffer from ndarray and keep the interface
+ * small and tidy.
+ *
+ * Why not std::variant? because the types are *very* simple, and there's no
+ * need for type checking beyond testing the enum flag in any part of the code.
+ * Also, this provides a few custom functions
+ *
+ * TODO: maybe rename
+ * TODO: maybe provide constructors to move stuff in
+ */
+struct npybuffer
+{
+	enum class type : uint8_t {
+		raw,
+		vector,
+		mmap
+	};
+
+	// tagged union
+	type type;
+	union {
+		raw_buffer*    raw;
+		vector_buffer* vector;
+		mmap_buffer*   mmap;
+	};
+
+	npybuffer(enum type _t) : type(_t) {}
+
+	// pointer to the actual array data
+	inline u8*
+	get_data_ptr()
+	{
+		switch (type) {
+		case type::raw:
+			return raw->data;
+		case type::vector:
+			return vector->data.data();
+		case type::mmap:
+			return mmap->data + mmap->data_offset;
+		}
+		return nullptr;
+	}
+
+	// pointer to the actual data. this is the same as with get_data_ptr except
+	// for mmap buffers
+	inline u8*
+	get_raw_data_ptr()
+	{
+		switch (type) {
+		case type::raw:
+			return raw->data;
+		case type::vector:
+			return vector->data.data();
+		case type::mmap:
+			return mmap->data;
+		}
+		return nullptr;
+	}
+
+	size_t
+	get_data_size()
+	{
+		switch (type) {
+		case type::raw:
+			return raw->size;
+		case type::vector:
+			return vector->data.size();
+		case type::mmap:
+			return mmap->size;
+		}
+		return 0;
+	}
+
+	void
+	release() {
+		switch (type) {
+		case type::raw:
+			ncr::numpy::release(raw);
+			break;
+		case type::vector:
+			ncr::numpy::release(vector);
+			break;
+		case type::mmap:
+			ncr::numpy::release(mmap);
+			break;
+		}
+	}
+};
+
+
+
+}} // ncr::numpy
+
+#endif /* _69a274a94acf465aaa21a9e5046fa6ed_ */
+
 /*
  * ndarray.hpp - n-dimensional array implementation
  *
@@ -1177,7 +1821,9 @@ operator<< (std::ostream &os, const dtype &dt)
 
 
 
+
 namespace ncr { namespace numpy {
+
 
 
 /*
@@ -1233,9 +1879,9 @@ struct ndarray_item
 	as() const {
 		// avoid reintrepreting to types which are too large and thus exceed
 		// memory bounds
-		if (_size < sizeof(T)) {
+		if (_size != sizeof(T)) {
 			std::ostringstream s;
-			s << "Template argument type size (" << sizeof(T) << " bytes) exceeds location size (" << _size << " bytes)";
+			s << "Template argument type size (" << sizeof(T) << " bytes) mismatch with item size (" << _size << " bytes)";
 			throw std::out_of_range(s.str());
 		}
 		T val;
@@ -1248,9 +1894,9 @@ struct ndarray_item
 	void
 	operator=(T value)
 	{
-		if (_size < sizeof(T)) {
+		if (_size != sizeof(T)) {
 			std::ostringstream s;
-			s << "Value size (" << sizeof(T) << " bytes) exceeds location size (" << _size << " bytes)";
+			s << "Value size (" << sizeof(T) << " bytes) mismatch with item size (" << _size << " bytes)";
 			throw std::length_error(s.str());
 		}
 		std::memcpy(_data, &value, sizeof(T));
@@ -1379,6 +2025,47 @@ struct ndarray
 
 	ndarray() {}
 
+	// non-copyable
+	ndarray(const ndarray&) = delete;
+	ndarray& operator=(const ndarray&) = delete;
+
+	// move constructor
+	ndarray(ndarray&& other) noexcept
+	: _dtype(other._dtype)
+	, _shape(other._shape)
+	, _size(other._size)
+	, _order(other._order)
+	, _strides(other._strides)
+	, _data_ptr(other._data_ptr)
+	, _data_size(other._data_size)
+	, _buffer(other._buffer)
+	{
+		// make sure other._bufptr is not pointing anywhere, or we'll end up
+		// releasing _bufptr too often
+		other._buffer = nullptr;
+	}
+
+	// move assignment
+	ndarray& operator=(ndarray&& other) noexcept
+	{
+		_dtype     = other._dtype;
+		_shape     = other._shape;
+		_size      = other._size;
+		_order     = other._order;
+		_strides   = other._strides;
+		_data_ptr  = other._data_ptr;
+		_data_size = other._data_size;
+		_buffer    = other._buffer;
+
+		// make sure other._bufptr is not pointing anywhere, or we'll end up
+		// releasing _bufptr too often
+		other._buffer = nullptr;
+
+		return *this;
+	}
+
+	// TODO: copy, which needs to explicitly be called and copy resources
+
 	// TODO: default data type
 	ndarray(std::initializer_list<u64> shape,
 	        struct dtype dt = dtype_float64(),
@@ -1407,8 +2094,9 @@ struct ndarray
 	        u64_vector &&shape,
 	        u8_vector &&buffer,
 	        storage_order o = storage_order::row_major)
-	: _dtype(std::move(dt)) , _shape(std::move(shape)) , _order(o), _data(std::move(buffer))
+	: _dtype(std::move(dt)) , _shape(std::move(shape)) , _order(o)
 	{
+		_from_vector_rvalue(std::move(buffer));
 		_compute_size();
 		_compute_strides();
 	}
@@ -1422,18 +2110,19 @@ struct ndarray
 	void
 	assign(dtype &&dt,
 	       u64_vector &&shape,
-	       u8_vector &&buffer,
+	       npybuffer *buffer,
 	       storage_order o = storage_order::row_major)
 	{
 		// tidy up first
 		_shape.clear();
-		_data.clear();
+		// TODO: determine if _release_buffer should be called or not
+		_release_buffer();
 
 		// assign values
 		_dtype = std::move(dt);
 		_shape = std::move(shape);
 		_order = o;
-		_data  = std::move(buffer);
+		_from_npybuffer(buffer);
 
 		// recompute size and strides
 		_compute_size();
@@ -1479,7 +2168,7 @@ struct ndarray
 			size_t offset = 0;
 			((offset += index * _strides[i], i++), ...);
 
-			return u8_span(_data.data() + _dtype.item_size * offset, _dtype.item_size);
+			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
 			// TODO: evaluate if this is the correct response here
@@ -1490,7 +2179,7 @@ struct ndarray
 	/*
 	 * get - get the u8 subrange in the data buffer for an element
 	 */
-	u8_span
+	inline u8_span
 	get(u64_vector indexes)
 	{
 		// TODO: don't assert, throw exception
@@ -1504,7 +2193,7 @@ struct ndarray
 				// update offset
 				offset += indexes[i] * _strides[i];
 			}
-			return u8_span(_data.data() + _dtype.item_size * offset, _dtype.item_size);
+			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
 			// TODO: like above, evaluate if this is the correct response
@@ -1622,12 +2311,12 @@ struct ndarray
 	{
 		size_t offset = 0;
 		auto stride = _dtype.item_size;
-		while (offset < _data.size()) {
-			auto span = u8_span(_data.data() + offset, stride);
+		while (offset < _data_size) {
+			auto span = u8_span(_data_ptr + offset, stride);
 			auto new_value = func(span);
 			if (new_value.size() != span.size())
 				throw std::length_error("Invalid size of result");
-			std::copy(new_value.begin(), new_value.end(), _data.begin() + offset);
+			std::copy(new_value.begin(), new_value.end(), _data_ptr + offset);
 			offset += stride;
 		}
 	}
@@ -1646,11 +2335,11 @@ struct ndarray
 	{
 		size_t offset = 0;
 		auto stride = sizeof(T);
-		while (offset < _data.size()) {
+		while (offset < _data_size) {
 			T tmp;
-			std::memcpy(&tmp, _data.data() + offset, sizeof(T));
+			std::memcpy(&tmp, _data_ptr + offset, sizeof(T));
 			tmp = func(tmp);
-			std::memcpy(_data.data() + offset, &tmp, sizeof(T));
+			std::memcpy(_data_ptr + offset, &tmp, sizeof(T));
 			offset += stride;
 		}
 	}
@@ -1670,7 +2359,7 @@ struct ndarray
 	{
 		for (size_t i = 0; i < _size; i++) {
 			func(ndarray_item(
-					_data.data() + _dtype.item_size * i,
+					_data_ptr + _dtype.item_size * i,
 					_dtype.item_size,
 					_dtype), i);
 		}
@@ -1688,13 +2377,13 @@ struct ndarray
 		}
 
 		auto stride = sizeof(T);
-		auto nelems = _data.size() / stride;
+		auto nelems = _data_size / stride;
 
 		T _max;
-		std::memcpy(&_max, &_data[0], sizeof(T));
+		std::memcpy(&_max, &_data_ptr[0], sizeof(T));
 		for (size_t i = 1; i < nelems; i++) {
 			T val;
-			std::memcpy(&val, &_data[i * stride], sizeof(T));
+			std::memcpy(&val, &_data_ptr[i * stride], sizeof(T));
 			if (val > _max)
 				_max = val;
 		}
@@ -1740,16 +2429,21 @@ struct ndarray
 		return s.str();
 	}
 
+	void
+	release()
+	{
+		_release_buffer();
+	}
 
 	//
 	// property getters
 	//
-	const struct dtype& dtype()    const { return _dtype; }
-	storage_order       order()    const { return _order; }
-	const u64_vector&   shape()    const { return _shape; }
-	const u8_vector&    data()     const { return _data;  }
-	size_t              size()     const { return _size;  }
-	size_t              bytesize() const { return _data.size(); }
+	const struct dtype& dtype()    const { return _dtype;     }
+	storage_order       order()    const { return _order;     }
+	const u64_vector&   shape()    const { return _shape;     }
+	const u8*           data()     const { return _data_ptr;  }
+	size_t              size()     const { return _size;      }
+	size_t              bytesize() const { return _data_size; }
 
 private:
 	// _data stores the type information of the array
@@ -1781,9 +2475,14 @@ private:
 	u64_vector
 		_strides;
 
-	// _data contains the 'raw' data of the array
-	u8_vector
-		_data;
+	u8*
+		_data_ptr = nullptr;
+
+	size_t
+		_data_size = 0;
+
+	npybuffer*
+		_buffer = nullptr;
 
 
 	/*
@@ -1812,7 +2511,7 @@ private:
 		else {
 			if (_dtype.item_size > 0) {
 				// infer from data and itemsize if possible
-				_size = _data.size() / _dtype.item_size;
+				_size = _data_size / _dtype.item_size;
 				// set shape to 1-dimensional of _size count
 				if (_size > 0) {
 					_shape.clear();
@@ -1834,12 +2533,76 @@ private:
 	void
 	_resize()
 	{
-		_data.clear();
+		// TODO: determine if _release_buffer should be called or not
+		_release_buffer();
+
 		if (!_size)
 			return;
-		_data.resize(_size * _dtype.item_size);
+		_alloc_buffer(_size * _dtype.item_size);
+	}
+
+
+	void
+	_from_npybuffer(npybuffer *buffer)
+	{
+		// TODO: determine if _release_buffer should be called or not
+		_release_buffer();
+
+		_buffer = buffer;
+		if (_buffer) {
+			_data_ptr  = _buffer->get_data_ptr();
+			_data_size = _buffer->get_data_size();
+		}
+	}
+
+
+	void
+	_from_vector_rvalue(u8_vector&& vec)
+	{
+		// TODO: determine if _release_buffer should be called or not
+		_release_buffer();
+
+		// move the vec into a new npybuffer of suitable type
+		_buffer = new npybuffer(npybuffer::type::vector);
+		_buffer->vector = make_vector_buffer(std::move(vec));
+		_data_ptr  = _buffer->get_data_ptr();
+		_data_size = _buffer->get_data_size();
+	}
+
+
+	void
+	_alloc_buffer(size_t N)
+	{
+		// TODO: determine if _release_buffer should be called or not
+		_release_buffer();
+
+		// by default, we allocate a vector buffer
+		_buffer = new npybuffer(npybuffer::type::vector);
+		_buffer->vector = make_vector_buffer(N);
+		_data_ptr  = _buffer->get_data_ptr();
+		_data_size = _buffer->get_data_size();
+	}
+
+
+	void
+	_release_buffer()
+	{
+		if (_buffer) {
+			_buffer->release();
+			delete _buffer;
+			_buffer = nullptr;
+		}
+		_data_size = 0;
+		_data_ptr = nullptr;
 	}
 };
+
+
+inline void
+release(ndarray &arr)
+{
+	arr.release();
+}
 
 
 inline bool
@@ -1918,6 +2681,13 @@ struct ndarray_t : ndarray
 		return proxy(*this, indexes);
 	}
 };
+
+template <typename T>
+inline void
+release(ndarray_t<T> &arr)
+{
+	arr.release();
+}
 
 
 /*
@@ -2049,70 +2819,6 @@ void print_tensor(ndarray_t<T> &arr, std::string indent="")
 
 #endif /* _719685da6c474222b60a9d28795719db_ */
 
-#ifndef _3549eb05d5494b4abb541f6f66f26565_
-#define _3549eb05d5494b4abb541f6f66f26565_
-
-namespace ncr {
-
-
-/*
- * memory_guard - A simple memory scope guard
- *
- * This template allows to pass in several pointers which will be deleted when
- * the guard goes out of scope. This is the same as using a unique_ptr into
- * which a pointer is moved, but with slightly less verbose syntax. This is
- * particularly useful to scope members of structs / classes.
- *
- * Example:
- *
- *     struct MyStruct {
- *         SomeType *var;
- *
- *         void some_function
- *         {
- *             // for some reason, var should live only as long as some_function
- *             // is running. This can be useful in the case of recursive
- *             // functions to which sending all the context or state variables
- *             // is inconvenient, and save them in the surrounding struct. An
- *             // alternative, maybe even a preferred way, is to use PODs that
- *             // contain state and use free functions. Still, the memory guard
- *             // might be handy
- *             var = new SomeType{};
- *             memory_guard<SomeType> guard(var);
- *
- *             ...
- *
- *             // the guard will call delete on `var' once it drops out of scope
- *         }
- *     };
- *
- * Example with unique_ptr:
- *
- *            // .. struct is same as above
- *            var = new SomeType{};
- *            std::unique_ptr<SomeType>(std::move(*var));
- *
- * Yes, this only saves a few characters to type. However, memory_guard works
- * with an arbitrary number of arguments.
- */
-template <typename... Ts>
-struct memory_guard;
-
-template <>
-struct memory_guard<> {};
-
-template <typename T, typename... Ts>
-struct memory_guard<T, Ts...> : memory_guard<Ts...>
-{
-	T *ptr = nullptr;
-	memory_guard(T *_ptr, Ts *...ptrs) : memory_guard<Ts...>(ptrs...), ptr(_ptr) {}
-	~memory_guard() { if (ptr) delete ptr; }
-};
-
-} // namespace ncr
-
-#endif /* _3549eb05d5494b4abb541f6f66f26565_ */
-
 /*
  * string_conversions.hpp - collection of functions to convert types to strings
  *
@@ -2226,40 +2932,162 @@ equals(const u8* first, const u8* last, const std::string_view &str)
 	return equals(u8_const_span(&*first, std::distance(first, last)), str);
 }
 
+// basic types
+enum class TokenType : u8 {
+	Unknown,
+	// punctuations / separators
+	// Dot,            // XXX: currently not handled explicitly
+	// Ellipsis,       // XXX: currently not handled explicitly
+	LeftBrace,        // { begin set | dict
+	RightBrace,       // } end set | dict
+	LeftBracket,      // [ begin list
+	RightBracket,     // ] end list
+	LeftParen,        // ( begin tuple
+	RightParen,       // ) end tuple
+	ValueSeparator,   // ,
+	KVSeparator,      // : between key and value pairs
+	// literals of known type
+	StringLiteral,    // a string ...
+	IntegerLiteral,   // an integer number
+	FloatLiteral,     // a floating point number
+	BoolLiteral,      // True or False
+	NoneLiteral,      // None
+	// others
+	// Identifier,     // XXX: currently not supported
+	// Keyword,        // XXX: currently not supported
+	// Operator,       // XXX: currently not supported
+};
+
+
+/*
+ * mapping of a punctuation symbol to its type
+ */
+struct Punctuation {
+	const u8 sym          = 0;
+	const TokenType ttype = TokenType::Unknown;
+};
+
+
+/*
+ * list of all punctuations
+ */
+inline constexpr Punctuation punctuations[] = {
+	// TODO: dot and ellipsis
+	{'{', TokenType::LeftBrace},
+	{'}', TokenType::RightBrace},
+	{'[', TokenType::LeftBracket},
+	{']', TokenType::RightBracket},
+	{'(', TokenType::LeftParen},
+	{')', TokenType::RightParen},
+	{':', TokenType::KVSeparator},
+	{',', TokenType::ValueSeparator},
+};
+
+
+/*
+ * list of all literals
+ */
+inline constexpr TokenType literals[] = {
+	TokenType::StringLiteral,
+	TokenType::IntegerLiteral,
+	TokenType::FloatLiteral,
+	TokenType::BoolLiteral,
+	TokenType::NoneLiteral,
+};
+
+
+/*
+ * is_literal - evaluate if the token type is literal
+ */
+inline constexpr bool
+is_literal(const TokenType &t) {
+	for (auto &l: literals)
+		if (l == t) return true;
+	return false;
+}
+
+
+// determine the punctuation type of the symbol under the cursor
+inline bool
+get_punctuation_type(u8 sym, TokenType &t)
+{
+	for (auto &p: punctuations)
+		if (p.sym == sym) {
+			t = p.ttype;
+			return true;
+		}
+	return false;
+}
+
+
+// determine if a string is an integer number or not.
+// TODO: maybe adapt std::from_chars, as this might circumvent using an
+// std::string, or maybe parse the numbers manually.
+// TODO: also allow users to have the ability to use
+// boost::lexical_cast. But I don't see why we should pull in anything
+// from boost for one or two lines of code.
+inline bool
+is_integer_literal(std::string str, u64 &value)
+{
+	char *end;
+	value = std::strtol(str.c_str(), &end, 10);
+	return *end == '\0';
+}
+
+
+// determine if a string is a floating point number or not.
+// TODO: maybe adapt std::from_chars, as this might circumvent using an
+// std::string, or maybe parse the numbers manually
+// TODO: also allow users to have the ability to use
+// boost::lexical_cast. But I don't see why we should pull in anything
+// from boost for one or two lines of code.
+inline bool
+is_float_literal(std::string str, double &value)
+{
+	// TODO: maybe adapt std::from_chars, as this might circumvent using an
+	// std::string. However, from_chars for float will be only in C++23
+	char *end;
+	value = std::strtod(str.c_str(), &end);
+	return *end == '\0';
+}
+
+
+// determine if the range given by [first,last) is a literal true or literal
+// false
+inline bool
+is_bool_literal(u8_const_iterator first, u8_const_iterator last, bool &value)
+{
+	if (equals(first, last, "False")) { value = false; return true; }
+	if (equals(first, last, "True"))  { value = true;  return true; }
+	return false;
+}
+
+inline bool
+is_bool_literal(const u8* first , const u8* last, bool &value)
+{
+	auto subspan = u8_const_span(first, std::distance(first, last));
+
+	if (equals(subspan, "False")) { value = false; return true; }
+	if (equals(subspan, "True"))  { value = true;  return true; }
+	return false;
+}
+
+
+inline bool
+is_whitespace(u8 sym)
+{
+	return sym == ' ' || sym == '\n' || sym == '\t';
+}
+
+
 
 /*
  * token - representes a token read from an input vector
  */
-struct token {
-
-	// basic types
-	enum class type : u8 {
-		unknown,
-		// punctuations / separators
-		// dot,            // XXX: currently not handled explicitly
-		// ellipsis,       // XXX: currently not handled explicitly
-		left_brace,        // { begin set | dict
-		right_brace,       // } end set | dict
-		left_bracket,      // [ begin list
-		right_bracket,     // ] end list
-		left_paren,        // ( begin tuple
-		right_paren,       // ) end tuple
-		value_separator,   // ,
-		kv_separator,      // : between key and value pairs
-		// literals of known type
-		string_literal,    // a string ...
-		integer_literal,   // an integer number
-		float_literal,     // a floating point number
-		bool_literal,      // True or False
-		none_literal,      // None
-		// others
-		// identifier,     // XXX: currently not supported
-		// keyword,        // XXX: currently not supported
-		// operator,       // XXX: currently not supported
-	};
-
+struct Token
+{
 	// the type of this token
-	type ttype = type::unknown;
+	TokenType ttype = TokenType::Unknown;
 
 	// explicitly store the iterators for this token relative to the input data.
 	// this makes debugging and data extraction slightly easier
@@ -2277,59 +3105,14 @@ struct token {
 		f64  d;
 		bool b;
 	} value;
-
-	/*
-	 * mapping of a punctuation symbol to its type
-	 */
-	struct punctuation {
-		const u8 sym            = 0;
-		const token::type ptype = token::type::unknown;
-	};
-
-	/*
-	 * list of all punctuations
-	 */
-	static constexpr punctuation punctuations[] = {
-		// TODO: dot and ellipsis
-		{'{', token::type::left_brace},
-		{'}', token::type::right_brace},
-		{'[', token::type::left_bracket},
-		{']', token::type::right_bracket},
-		{'(', token::type::left_paren},
-		{')', token::type::right_paren},
-		{':', token::type::kv_separator},
-		{',', token::type::value_separator},
-	};
-
-	/*
-	 * list of all literals
-	 */
-	static constexpr token::type literals[] = {
-		token::type::string_literal,
-		token::type::integer_literal,
-		token::type::float_literal,
-		token::type::bool_literal,
-		token::type::none_literal,
-	};
-
-	/*
-	 * is_literal - evaluate if the token type is literal
-	 */
-	static constexpr bool
-	is_literal(const token::type &t) {
-		for (auto &l: literals)
-			if (l == t) return true;
-		return false;
-	}
 };
 
+
 inline bool
-equals(const token &tok, const std::string_view &str)
+equals(const Token &tok, const std::string_view &str)
 {
 	return equals(u8_const_span(&*tok.begin, std::distance(tok.begin, tok.end)), str);
 }
-
-
 
 
 /*
@@ -2337,27 +3120,27 @@ equals(const token &tok, const std::string_view &str)
  */
 inline
 const char*
-to_string(const token::type &type)
+to_string(const TokenType &type)
 {
 	using namespace ncr;
 
 	switch (type) {
-	case token::type::string_literal:  return "string";
-	//case token::type::dot:             return "dot";
-	//case token::type::ellipsis:        return "ellipsis";
-	case token::type::value_separator: return "delimiter";
-	case token::type::left_brace:      return "braces_left";
-	case token::type::right_brace:     return "braces_right";
-	case token::type::left_bracket:    return "brackets_left";
-	case token::type::right_bracket:   return "brackets_right";
-	case token::type::left_paren:      return "parens_left";
-	case token::type::right_paren:     return "parens_right";
-	case token::type::kv_separator:    return "colon";
-	case token::type::integer_literal: return "integer";
-	case token::type::float_literal:   return "floating_point";
-	case token::type::bool_literal:    return "boolean";
-	case token::type::none_literal:    return "none";
-	case token::type::unknown:         return "unknown";
+	case TokenType::StringLiteral:  return "string";
+	//case token_type::dot:             return "dot";
+	//case token_type::ellipsis:        return "ellipsis";
+	case TokenType::ValueSeparator: return "delimiter";
+	case TokenType::LeftBrace:      return "braces_left";
+	case TokenType::RightBrace:     return "braces_right";
+	case TokenType::LeftBracket:    return "brackets_left";
+	case TokenType::RightBracket:   return "brackets_right";
+	case TokenType::LeftParen:      return "parens_left";
+	case TokenType::RightParen:     return "parens_right";
+	case TokenType::KVSeparator:    return "colon";
+	case TokenType::IntegerLiteral: return "integer";
+	case TokenType::FloatLiteral:   return "floating_point";
+	case TokenType::BoolLiteral:    return "boolean";
+	case TokenType::NoneLiteral:    return "none";
+	case TokenType::Unknown:        return "unknown";
 	}
 
 	return "";
@@ -2369,11 +3152,36 @@ to_string(const token::type &type)
  */
 inline
 std::string
-to_string(const token &token)
+to_string(const Token &token)
 {
 	std::ostringstream oss;
 	oss << "token type: " << to_string(token.ttype) << ", value: " << ncr::to_string(token.span(), {.sep=" ", .beg="", .end=""});
 	return oss.str();
+}
+
+
+inline constexpr bool
+is_number(Token &tok)
+{
+	return
+		tok.ttype == TokenType::FloatLiteral ||
+		tok.ttype == TokenType::IntegerLiteral;
+}
+
+
+inline constexpr bool
+is_string(Token &tok)
+{
+	return
+		tok.ttype == TokenType::StringLiteral;
+}
+
+
+inline constexpr bool
+is_delimiter(Token &tok)
+{
+	return
+		tok.ttype == TokenType::ValueSeparator;
 }
 
 
@@ -2477,7 +3285,7 @@ to_string(const token &token)
  * advantage of the template version to convince me that it's worth applying,
  * though.
  */
-struct tokenizer
+struct Tokenizer
 {
 	// reference to the input data
 	const u8* data_start;
@@ -2492,8 +3300,8 @@ struct tokenizer
 	// tokenizer. For most inputs that this tokenizer will see, this currently
 	// does not pose any issue. In the future, a .parse() function might be
 	// implemented which takes care of the buffer growing out-of-bounds.
-	using restore_point = size_t;
-	std::vector<token> buffer;
+	using RestorePoint = size_t;
+	std::vector<Token> buffer;
 	size_t             buffer_pos {0};
 
 	// different tokenizer result
@@ -2505,84 +3313,11 @@ struct tokenizer
 	};
 
 
-	 tokenizer(const u8* begin, const u8* end)
+	Tokenizer(const u8* begin, const u8* end)
 	 	 : data_start(begin), data_end(end)
 	 	 , tok_start(begin), tok_end(end) {}
 
 	// tokenizer(u8_span &_data) : data(_data), tok_start(data.begin()), tok_end(data.begin()) {}
-
-
-	// determine the punctuation type of the symbol under the cursor
-	inline bool
-	get_punctuation_type(u8 sym, token::type &t) const
-	{
-		for (auto &p: token::punctuations)
-			if (p.sym == sym) {
-				t = p.ptype;
-				return true;
-			}
-		return false;
-	}
-
-
-	// determine if a string is an integer number or not.
-	// TODO: maybe adapt std::from_chars, as this might circumvent using an
-	// std::string, or maybe parse the numbers manually.
-	// TODO: also allow users to have the ability to use
-	// boost::lexical_cast. But I don't see why we should pull in anything
-	// from boost for one or two lines of code.
-	inline bool
-	is_integer_literal(std::string str, u64 &value) const
-	{
-		char *end;
-		value = std::strtol(str.c_str(), &end, 10);
-		return *end == '\0';
-	}
-
-
-	// determine if a string is a floating point number or not.
-	// TODO: maybe adapt std::from_chars, as this might circumvent using an
-	// std::string, or maybe parse the numbers manually
-	// TODO: also allow users to have the ability to use
-	// boost::lexical_cast. But I don't see why we should pull in anything
-	// from boost for one or two lines of code.
-	inline bool
-	is_float_literal(std::string str, double &value) const
-	{
-		// TODO: maybe adapt std::from_chars, as this might circumvent using an
-		// std::string. However, from_chars for float will be only in C++23
-		char *end;
-		value = std::strtod(str.c_str(), &end);
-		return *end == '\0';
-	}
-
-
-	// determine if the range given by [first,last) is a literal true or literal
-	// false
-	inline bool
-	is_bool_literal(u8_const_iterator first, u8_const_iterator last, bool &value) const
-	{
-		if (equals(first, last, "False")) { value = false; return true; }
-		if (equals(first, last, "True"))  { value = true;  return true; }
-		return false;
-	}
-
-	inline bool
-	is_bool_literal(const u8* first , const u8* last, bool &value) const
-	{
-		auto subspan = u8_const_span(first, std::distance(first, last));
-
-		if (equals(subspan, "False")) { value = false; return true; }
-		if (equals(subspan, "True"))  { value = true;  return true; }
-		return false;
-	}
-
-
-	inline bool
-	is_whitespace(u8 sym) const
-	{
-		return sym == ' ' || sym == '\n' || sym == '\t';
-	}
 
 
 	bool
@@ -2592,8 +3327,8 @@ struct tokenizer
 		// parsing fails when there's no more input.
 		// TODO: better to propagate EOF from within the parse_* methods (see
 		//       also comment in parse()
-		restore_point rp;
-		token tok;
+		RestorePoint rp;
+		Token tok;
 		if (tok_start == data_end || get_next_token(tok, &rp) == result::end_of_input)
 			return true;
 		restore(rp);
@@ -2602,7 +3337,7 @@ struct tokenizer
 
 
 	result
-	__fetch_token(token &tok)
+	__fetch_token(Token &tok)
 	{
 		if (tok_start == data_end)
 			return result::end_of_input;
@@ -2641,7 +3376,7 @@ struct tokenizer
 		*/
 
 		// punctuations
-		token::type ttype;
+		TokenType ttype;
 		if (get_punctuation_type(*tok_start, ttype)) {
 			tok.ttype     = ttype;
 			tok.begin     = tok_start;
@@ -2661,7 +3396,7 @@ struct tokenizer
 				if (*tok_end == str_delim)
 					break;
 			}
-			tok.ttype = token::type::string_literal;
+			tok.ttype = TokenType::StringLiteral;
 			// range excludes the surrounding ''
 			tok.begin = tok_start + 1;
 			tok.end   = tok_end;
@@ -2676,7 +3411,7 @@ struct tokenizer
 
 		// read everything until a punctuation or whitespace
 		while (tok_end != data_end) {
-			token::type ttype;
+			TokenType ttype;
 			if (*tok_end == ' ' || get_punctuation_type(*tok_end, ttype))
 				break;
 			++tok_end;
@@ -2690,17 +3425,17 @@ struct tokenizer
 			// locale's decimal point settings
 			std::string tmp(tok.begin, tok.end);
 			if (is_integer_literal(tmp, tok.value.l))
-				tok.ttype = token::type::integer_literal;
+				tok.ttype = TokenType::IntegerLiteral;
 			else if (is_float_literal(tmp, tok.value.d))
-				tok.ttype = token::type::float_literal;
+				tok.ttype = TokenType::FloatLiteral;
 			else if (is_bool_literal(tok.begin, tok.end, tok.value.b))
-				tok.ttype = token::type::bool_literal;
+				tok.ttype = TokenType::BoolLiteral;
 			else if (equals(u8_const_span(tok.begin, std::distance(tok.begin, tok.end)), "None"))
-				tok.ttype = token::type::none_literal;
+				tok.ttype = TokenType::NoneLiteral;
 			else
 				// we could not determine this type.
 				// TODO: maybe return an error code
-				tok.ttype = token::type::unknown;
+				tok.ttype = TokenType::Unknown;
 		}
 		tok_start = tok_end;
 		return result::ok;
@@ -2723,33 +3458,32 @@ struct tokenizer
 	 * become an issue, though.
 	 */
 	result
-	get_next_token(token &tok, restore_point *bpoint =nullptr)
+	get_next_token(Token &tok, RestorePoint *bpoint =nullptr)
 	{
 		if (bpoint != nullptr)
 			*bpoint = buffer_pos;
 
 		if (buffer_pos < buffer.size()) {
 			tok = buffer[buffer_pos++];
-			return tokenizer::result::ok;
+			return Tokenizer::result::ok;
 		}
 
 		if (buffer.empty() || buffer_pos >= buffer.size()) {
-			token _tok;
-			if (__fetch_token(_tok) == tokenizer::result::ok) {
+			Token _tok;
+			if (__fetch_token(_tok) == Tokenizer::result::ok) {
 				buffer.push_back(_tok);
 				tok = buffer.back();
 				buffer_pos = buffer.size();
-				return tokenizer::result::ok;
+				return Tokenizer::result::ok;
 			}
 		}
 
-		return tokenizer::result::end_of_input;
+		return Tokenizer::result::end_of_input;
 	}
 
 	// backup points to memoize where the
-	restore_point backup()             { return buffer_pos;   }
-	void restore(restore_point bpoint) { buffer_pos = bpoint; }
-
+	RestorePoint backup()             { return buffer_pos;   }
+	void restore(RestorePoint bpoint) { buffer_pos = bpoint; }
 };
 
 
@@ -2770,33 +3504,33 @@ struct tokenizer
  * parser type can be changed, of course. Until then, I'll stick to RDP and
  * ignore discussions around this issue.
  */
-struct pyparser
+struct PyParser
 {
 	enum class result : u8 {
 		ok,             // parsing succeeded
 		failure,        // failure parsing a context / type / object
-		syntax_error,   // syntax error while parsing
+		syntax_error,    // syntax error while parsing
 		incomplete      // parsing encountered an incomplete context / type / object
 	};
 
 	/*
 	 * the type of object that was parsed
 	 */
-	enum class type : u8 {
-		uninitialized,  // something we don't yet know (default value)
+	enum class Type : u8 {
+		Uninitialized,  // something we don't yet know (default value)
 
-		none,           // the none-type for the keyword "None"
-		string,
-		integer,
-		floating_point,
-		boolean,
-		kvpair,         // a key:value pair
-		tuple,          // tuples of the form (value0, value1, ...)
-		list,           // lists of the form [value0, value1, ...]
-		set,            // sets of the form {value0, value1, ...}
-		dict,           // dict of the form {key0:value0, key1:value1, ...}
+		None,           // the none-type for the keyword "None"
+		String,
+		Integer,
+		FloatingPoint,
+		Boolean,
+		KVPair,         // a key:value pair
+		Tuple,          // tuples of the form (value0, value1, ...)
+		List,           // lists of the form [value0, value1, ...]
+		Set,            // sets of the form {value0, value1, ...}
+		Dict,           // dict of the form {key0:value0, key1:value1, ...}
 
-		symbol,         // anything like {}[], etc. we return parse_results for
+		Symbol,         // anything like {}[], etc. we return parse_results for
 		                // symbols even though they don't specify a particular
 		                // type, because we might want to extract the beginning
 		                // and end of certain groups. This keeps the interface
@@ -2807,7 +3541,7 @@ struct pyparser
 		                // require a different data type. Could have used an
 		                // std::vector or similar container, though.
 
-		root_context,   // root context, contains everything that was parsed
+		RootContext,    // root context, contains everything that was parsed
 		                // successfully
 	};
 
@@ -2824,31 +3558,35 @@ struct pyparser
 	 *
 	 * XXX: maybe use an std::variant to get more type checking into the parser
 	 */
-	struct parse_result {
-		using parse_result_nodes = std::vector<std::unique_ptr<parse_result>>;
+	struct ParseResult {
+		using ParseResultNodes = std::vector<std::unique_ptr<ParseResult>>;
 
 		// parse status of this result / context
-		result             status {result::failure};
+		result
+			status {result::failure};
 
 		// data type of this result / context
-		type               dtype  {type::uninitialized};
+		Type
+			dtype  {Type::Uninitialized};
 
 		// where this type / context starts in the input range
-		const u8* begin;
+		const u8*
+			begin;
 
 		// where this type / context ends
-		const u8* end;
+		const u8*
+			end;
 
 		// in case of a group (kvpairs, lists, etc.), this contains the group's
 		// children. In case of a key-value pair, there will be 2 children:
 		// first the key, then the value
-		parse_result_nodes nodes;
+		ParseResultNodes nodes;
 
 		// for 'basic types', this contains the actual value
 		union {
-			i64    l;
-			f64    d;
-			bool   b;
+			i64  l;
+			f64  d;
+			bool b;
 		} value;
 
 		// access to the range within the input which this parse_result captures
@@ -2860,38 +3598,7 @@ struct pyparser
 		{
 			return ::ncr::numpy::equals(this->begin, this->end, str);
 		}
-
 	};
-
-
-	// the tokenizer used during parsing. Note that this member will live only
-	// during a call to parse()
-	tokenizer *tokens {nullptr};
-
-
-	inline static constexpr bool
-	is_number(token &tok)
-	{
-		return
-			tok.ttype == token::type::float_literal ||
-			tok.ttype == token::type::integer_literal;
-	}
-
-
-	inline static constexpr bool
-	is_string(token &tok)
-	{
-		return
-			tok.ttype == token::type::string_literal;
-	}
-
-
-	inline static constexpr bool
-	is_delimiter(token &tok)
-	{
-		return
-			tok.ttype == token::type::value_separator;
-	}
 
 
 	/*
@@ -2900,33 +3607,31 @@ struct pyparser
 	 * If parsing fails, the tokenizer will be reset to the token that was just
 	 * read.
 	 */
-	template <token::type TokenType, pyparser::type ParserType>
-	std::unique_ptr<parse_result>
-	parse_token_type()
+	template <TokenType TokenType, PyParser::Type ParserType>
+	std::unique_ptr<ParseResult>
+	parse_token_type(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-
-		token tok;
-		tokenizer::restore_point rp;
-		if (tokens->get_next_token(tok, &rp) == tokenizer::result::ok && tok.ttype == TokenType) {
-			auto ptr = std::make_unique<parse_result>();
+		Token tok;
+		Tokenizer::RestorePoint rp;
+		if (tokens.get_next_token(tok, &rp) == Tokenizer::result::ok && tok.ttype == TokenType) {
+			auto ptr = std::make_unique<ParseResult>();
 			ptr->status = result::ok;
 			ptr->dtype  = ParserType;
 			ptr->begin  = tok.begin;
 			ptr->end    = tok.end;
 
 			// direct value assignments
-			if constexpr (ParserType == type::boolean)
+			if constexpr (ParserType == Type::Boolean)
 				ptr->value.b = tok.value.b;
-			if constexpr (ParserType == type::integer)
+			if constexpr (ParserType == Type::Integer)
 				ptr->value.l = tok.value.l;
-			if constexpr (ParserType == type::floating_point)
+			if constexpr (ParserType == Type::FloatingPoint)
 				ptr->value.d = tok.value.d;
 
 			return ptr;
 		}
 
-		tokens->restore(rp);
+		tokens.restore(rp);
 		return {};
 	}
 
@@ -2937,91 +3642,88 @@ struct pyparser
 	 * If parsing fails, the tokenizer will be reset to the token that was just
 	 * read.
 	 */
-	template <pyparser::type ParserType, typename F>
-	std::unique_ptr<parse_result>
-	parse_token_fn(F fn)
+	template <PyParser::Type ParserType, typename F>
+	std::unique_ptr<ParseResult>
+	parse_token_fn(Tokenizer &tokens, F fn)
 	{
-		if (!tokens) return {};
-
-		token tok;
-		tokenizer::restore_point rp;
-		if (tokens->get_next_token(tok, &rp) == tokenizer::result::ok && fn(tok)) {
-			auto ptr = std::make_unique<parse_result>();
+		Token tok;
+		Tokenizer::RestorePoint rp;
+		if (tokens.get_next_token(tok, &rp) == Tokenizer::result::ok && fn(tok)) {
+			auto ptr = std::make_unique<ParseResult>();
 			ptr->status = result::ok;
 			ptr->dtype  = ParserType;
 			ptr->begin  = tok.begin;
 			ptr->end    = tok.end;
 
 			// direct value assignments
-			if constexpr (ParserType == type::integer)
+			if constexpr (ParserType == Type::Integer)
 				ptr->value.l = tok.value.l;
 
 			return ptr;
 		}
 
-		tokens->restore(rp);
+		tokens.restore(rp);
 		return {};
 	}
 
 
 	// symbols. result of these parse instructions will be ignored, but for the
 	// sake of completeness, we still specify a parser type
-	inline std::unique_ptr<parse_result> parse_delimiter() { return parse_token_fn<type::symbol>(is_delimiter);                     }
-	inline std::unique_ptr<parse_result> parse_colon()     { return parse_token_type<token::type::kv_separator,   type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lbracket()  { return parse_token_type<token::type::left_bracket,   type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rbracket()  { return parse_token_type<token::type::right_bracket,  type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lbrace()    { return parse_token_type<token::type::left_brace,     type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rbrace()    { return parse_token_type<token::type::right_brace,    type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_lparen()    { return parse_token_type<token::type::left_paren,     type::symbol>();  }
-	inline std::unique_ptr<parse_result> parse_rparen()    { return parse_token_type<token::type::right_paren,    type::symbol>();  }
+	inline std::unique_ptr<ParseResult> parse_delimiter(Tokenizer &tokens) { return parse_token_fn<Type::Symbol>(tokens, is_delimiter);                  }
+	inline std::unique_ptr<ParseResult> parse_colon(Tokenizer &tokens)     { return parse_token_type<TokenType::KVSeparator,   Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_lbracket(Tokenizer &tokens)  { return parse_token_type<TokenType::LeftBracket,   Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_rbracket(Tokenizer &tokens)  { return parse_token_type<TokenType::RightBracket,  Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_lbrace(Tokenizer &tokens)    { return parse_token_type<TokenType::LeftBrace,     Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_rbrace(Tokenizer &tokens)    { return parse_token_type<TokenType::RightBrace,    Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_lparen(Tokenizer &tokens)    { return parse_token_type<TokenType::LeftParen,     Type::Symbol>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_rparen(Tokenizer &tokens)    { return parse_token_type<TokenType::RightParen,    Type::Symbol>(tokens);  }
 
 	// types / literals
-	inline std::unique_ptr<parse_result> parse_number()    { return parse_token_fn<type::integer>(is_number);                       }
-	inline std::unique_ptr<parse_result> parse_string()    { return parse_token_type<token::type::string_literal, type::string>();  }
-	inline std::unique_ptr<parse_result> parse_bool()      { return parse_token_type<token::type::bool_literal,   type::boolean>(); }
-	inline std::unique_ptr<parse_result> parse_none()      { return parse_token_type<token::type::none_literal,   type::none>();    }
+	inline std::unique_ptr<ParseResult> parse_number(Tokenizer &tokens)    { return parse_token_fn<Type::Integer>(tokens, is_number);                    }
+	inline std::unique_ptr<ParseResult> parse_string(Tokenizer &tokens)    { return parse_token_type<TokenType::StringLiteral, Type::String>(tokens);  }
+	inline std::unique_ptr<ParseResult> parse_bool(Tokenizer &tokens)      { return parse_token_type<TokenType::BoolLiteral,   Type::Boolean>(tokens); }
+	inline std::unique_ptr<ParseResult> parse_none(Tokenizer &tokens)      { return parse_token_type<TokenType::NoneLiteral,   Type::None>(tokens);    }
 
 
-	std::unique_ptr<parse_result>
-	parse_kvpair()
+	std::unique_ptr<ParseResult>
+	parse_kvpair(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-		auto rp = tokens->backup();
+		auto rp = tokens.backup();
 
 		// parse the key
-		auto      key = parse_string();
-		if (!key) key = parse_number();
-		if (!key) key = parse_tuple();
+		auto      key = parse_string(tokens);
+		if (!key) key = parse_number(tokens);
+		if (!key) key = parse_tuple(tokens);
 		if (!key) {
-			tokens->restore(rp);
+			tokens.restore(rp);
 			return {};
 		}
 
 		// parse :
-		if (!parse_colon()) {
-			tokens->restore(rp);
+		if (!parse_colon(tokens)) {
+			tokens.restore(rp);
 			return {};
 		}
 
 		// parse the value
-		auto        value = parse_none();
-		if (!value) value = parse_bool();
-		if (!value) value = parse_number();
-		if (!value) value = parse_string();
-		if (!value) value = parse_tuple();
-		if (!value) value = parse_list();
-		if (!value) value = parse_set();
-		if (!value) value = parse_dict();
+		auto        value = parse_none(tokens);
+		if (!value) value = parse_bool(tokens);
+		if (!value) value = parse_number(tokens);
+		if (!value) value = parse_string(tokens);
+		if (!value) value = parse_tuple(tokens);
+		if (!value) value = parse_list(tokens);
+		if (!value) value = parse_set(tokens);
+		if (!value) value = parse_dict(tokens);
 		if (!value) {
 			// failed to parse kv pair, backtrack out
-			tokens->restore(rp);
+			tokens.restore(rp);
 			return {};
 		}
 
 		// package up the result
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::ok;
-		ptr->dtype = type::kvpair;
+		ptr->dtype = Type::KVPair;
 		ptr->begin = key->begin;
 		ptr->end   = value->end;
 		ptr->nodes.push_back(std::move(key));
@@ -3030,31 +3732,30 @@ struct pyparser
 	}
 
 
-	std::unique_ptr<parse_result>
-	parse_tuple()
+	std::unique_ptr<ParseResult>
+	parse_tuple(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-		auto rp = tokens->backup();
+		auto rp = tokens.backup();
 
-		auto lparen = parse_lparen();
+		auto lparen = parse_lparen(tokens);
 		if (!lparen) return {};
 
 		// prepare package
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::incomplete;
-		ptr->dtype  = type::tuple;
+		ptr->dtype  = Type::Tuple;
 		ptr->begin  = lparen->begin;
 
 		bool expect_delim = false;
-		while (true) {
-			if (parse_delimiter()) {
+		while (!tokens.eof()) {
+			if (parse_delimiter(tokens)) {
 				if (!expect_delim)
 					return {};
 				expect_delim = false;
 				continue;
 			}
 
-			auto rparen = parse_rparen();
+			auto rparen = parse_rparen(tokens);
 			if (rparen) {
 				// finalize the package
 				ptr->status = result::ok;
@@ -3064,50 +3765,50 @@ struct pyparser
 
 			// almost everything is allowed in tuples. we only care about those
 			// types that we have implemented (so far), though.
-			auto       elem = parse_none();
-			if (!elem) elem = parse_bool();
-			if (!elem) elem = parse_number();
-			if (!elem) elem = parse_string();
-			if (!elem) elem = parse_tuple();
-			if (!elem) elem = parse_list();
-			if (!elem) elem = parse_set();
-			if (!elem) elem = parse_dict();
+			auto       elem = parse_none(tokens);
+			if (!elem) elem = parse_bool(tokens);
+			if (!elem) elem = parse_number(tokens);
+			if (!elem) elem = parse_string(tokens);
+			if (!elem) elem = parse_tuple(tokens);
+			if (!elem) elem = parse_list(tokens);
+			if (!elem) elem = parse_set(tokens);
+			if (!elem) elem = parse_dict(tokens);
 			if (!elem) {
 				// failed to parse tuple, backtrack out
-				tokens->restore(rp);
+				tokens.restore(rp);
 				return {};
 			}
 			ptr->nodes.push_back(std::move(elem));
 			expect_delim = true;
 		}
+		return {};
 	}
 
 
-	std::unique_ptr<parse_result>
-	parse_list()
+	std::unique_ptr<ParseResult>
+	parse_list(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-		auto rp = tokens->backup();
+		auto rp = tokens.backup();
 
-		auto lbracket = parse_lbracket();
+		auto lbracket = parse_lbracket(tokens);
 		if (!lbracket) return {};
 
 		// prepare package
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::incomplete;
-		ptr->dtype  = type::list;
+		ptr->dtype  = Type::List;
 		ptr->begin  = lbracket->begin;
 
 		bool expect_delim = false;
-		while (true) {
-			if (parse_delimiter()) {
+		while (!tokens.eof()) {
+			if (parse_delimiter(tokens)) {
 				if (!expect_delim)
 					return {};
 				expect_delim = false;
 				continue;
 			}
 
-			auto rbracket = parse_rbracket();
+			auto rbracket = parse_rbracket(tokens);
 			if (rbracket) {
 				// finalize the package
 				ptr->status = result::ok;
@@ -3116,50 +3817,50 @@ struct pyparser
 			}
 
 			// almost everything is allowed in a list
-			auto       elem = parse_none();
-			if (!elem) elem = parse_bool();
-			if (!elem) elem = parse_number();
-			if (!elem) elem = parse_string();
-			if (!elem) elem = parse_tuple();
-			if (!elem) elem = parse_list();
-			if (!elem) elem = parse_set();
-			if (!elem) elem = parse_dict();
+			auto       elem = parse_none(tokens);
+			if (!elem) elem = parse_bool(tokens);
+			if (!elem) elem = parse_number(tokens);
+			if (!elem) elem = parse_string(tokens);
+			if (!elem) elem = parse_tuple(tokens);
+			if (!elem) elem = parse_list(tokens);
+			if (!elem) elem = parse_set(tokens);
+			if (!elem) elem = parse_dict(tokens);
 			if (!elem) {
 				// failed to parse list, backtrack out
-				tokens->restore(rp);
+				tokens.restore(rp);
 				return {};
 			}
 			ptr->nodes.push_back(std::move(elem));
 			expect_delim = true;
 		}
+		return {};
 	}
 
 
-	std::unique_ptr<parse_result>
-	parse_set()
+	std::unique_ptr<ParseResult>
+	parse_set(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-		auto rp = tokens->backup();
+		auto rp = tokens.backup();
 
-		auto lbrace = parse_lbrace();
+		auto lbrace = parse_lbrace(tokens);
 		if (!lbrace) return {};
 
 		// prepare package
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::incomplete;
-		ptr->dtype  = type::set;
+		ptr->dtype  = Type::Set;
 		ptr->begin  = lbrace->begin;
 
 		bool expect_delim = false;
-		while (true) {
-			if (parse_delimiter()) {
+		while (!tokens.eof()) {
+			if (parse_delimiter(tokens)) {
 				if (!expect_delim)
 					return {};
 				expect_delim = false;
 				continue;
 			}
 
-			auto rbrace = parse_rbrace();
+			auto rbrace = parse_rbrace(tokens);
 			if (rbrace) {
 				// finalize package
 				ptr->status = result::ok;
@@ -3170,48 +3871,48 @@ struct pyparser
 			// allowed types in a set are all immutable and hashable types. we
 			// don't support arbitrary hashable objects, so we only need to
 			// check for immutable things that we know
-			auto       elem = parse_none();
-			if (!elem) elem = parse_bool();
-			if (!elem) elem = parse_number();
-			if (!elem) elem = parse_string();
-			if (!elem) elem = parse_tuple();
-			if (!elem) elem = parse_set();
+			auto       elem = parse_none(tokens);
+			if (!elem) elem = parse_bool(tokens);
+			if (!elem) elem = parse_number(tokens);
+			if (!elem) elem = parse_string(tokens);
+			if (!elem) elem = parse_tuple(tokens);
+			if (!elem) elem = parse_set(tokens);
 			if (!elem) {
 				// failed to parse set, backtrack out
-				tokens->restore(rp);
+				tokens.restore(rp);
 				return {};
 			}
 			ptr->nodes.push_back(std::move(elem));
 			expect_delim = true;
 		}
+		return {};
 	}
 
 
-	std::unique_ptr<parse_result>
-	parse_dict()
+	std::unique_ptr<ParseResult>
+	parse_dict(Tokenizer &tokens)
 	{
-		if (!tokens) return {};
-		auto rp = tokens->backup();
+		auto rp = tokens.backup();
 
-		auto lbrace = parse_lbrace();
+		auto lbrace = parse_lbrace(tokens);
 		if (!lbrace) return {};
 
 		// prepare package
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::incomplete;
-		ptr->dtype  = type::dict;
+		ptr->dtype  = Type::Dict;
 		ptr->begin  = lbrace->begin;
 
 		bool expect_delim = false;
-		while (true) {
-			if (parse_delimiter()) {
+		while (!tokens.eof()) {
+			if (parse_delimiter(tokens)) {
 				if (!expect_delim)
 					return {};
 				expect_delim = false;
 				continue;
 			}
 
-			auto rbrace = parse_rbrace();
+			auto rbrace = parse_rbrace(tokens);
 			if (rbrace) {
 				// finalize package
 				ptr->status = result::ok;
@@ -3221,56 +3922,47 @@ struct pyparser
 
 			// sets are surprisingly simple beasts to tame, because they only
 			// want to eat kv pairs
-			auto kv_pair = parse_kvpair();
+			auto kv_pair = parse_kvpair(tokens);
 			if (!kv_pair) {
 				// failed to parse dict, backtrack out
-				tokens->restore(rp);
+				tokens.restore(rp);
 				return {};
 			}
 			ptr->nodes.push_back(std::move(kv_pair));
 			expect_delim = true;
 		}
-
-
+		return {};
 	}
 
 
-	std::unique_ptr<parse_result>
-	parse_expression()
+	std::unique_ptr<ParseResult>
+	parse_expression(Tokenizer &tokens)
 	{
-		if (!tokens)       return {};
-
 		// parse the things we know (and care about) in order they are specified
 		// in python's formal grammar
-		auto         result = parse_tuple();
-		if (!result) result = parse_list();
-		if (!result) result = parse_set();
-		if (!result) result = parse_dict();
+		auto         result = parse_tuple(tokens);
+		if (!result) result = parse_list(tokens);
+		if (!result) result = parse_set(tokens);
+		if (!result) result = parse_dict(tokens);
 
 		return result;
 	}
 
 
-	std::unique_ptr<parse_result>
+	std::unique_ptr<ParseResult>
 	parse(u8_const_span input)
 	{
-		// tokenizer is a member, but lives only within this scope. we could, of
-		// course call delete before each return, but that'd be too easy. We
-		// could also use another local unique_ptr and move tokens into it, i.e.
-		//    auto ptr = std::make_unique<Foo>(std::move(*tokens));
-		// but that looks really ugly.
-		tokens = new tokenizer{input.data(), input.data() + input.size()};
-		memory_guard<tokenizer> guard(tokens);
+		Tokenizer tokens{input.data(), input.data() + input.size()};
 
-		auto ptr = std::make_unique<parse_result>();
+		auto ptr = std::make_unique<ParseResult>();
 		ptr->status = result::incomplete;
-		ptr->dtype  = type::root_context;
+		ptr->dtype  = Type::RootContext;
 		// TODO: currently we don't store begin nor end for the root context.
 		// maybe this should change
 
 		// properly initialize the parser state
-		while (!tokens->eof()) {
-			auto expr = parse_expression();
+		while (!tokens.eof()) {
+			auto expr = parse_expression(tokens);
 			if (!expr)
 				return {};
 			ptr->nodes.push_back(std::move(expr));
@@ -3279,13 +3971,10 @@ struct pyparser
 		return ptr;
 	}
 
-	std::unique_ptr<parse_result>
+	std::unique_ptr<ParseResult>
 	parse(const u8_vector &input)
 	{
 		return parse(u8_const_span(input.data(), input.size()));
-
-		// auto sr = u8_const_subrange(input.cbegin(), input.cend());
-		//return parse(u8_span(input.data(), input.size()));
 	}
 
 };
@@ -3538,288 +4227,6 @@ toggle_bit(const T v, const U N)
 
 #endif /* _6029ff7cb97c498f8a26966c49a873fe_ */
 
-#ifndef _65fc1481d8d149029547d3932c93f2e0_
-#define _65fc1481d8d149029547d3932c93f2e0_
-
-
-
-/*
- * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
- *
- * This macro expands into functions for bit-wise and binary operations on
- * enums, e.g. given two enum values a and b, one might want to write `a |= b;`.
- * With the macro below, this will be possible.
- */
-#define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
-	inline ENUM_T operator~(ENUM_T a)              { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
-	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
-	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); }
-
-
-/*
- * NCR_DEFINE_FUNCTION_ALIAS - define a function alias for another function
- *
- * Using perfect forwarding, this creates a function with a novel name that
- * forwards all the arguments to the original function
- *
- * Note: In case there are multiple overloaded functions, this macro can be used
- *       _after_ the last overloaded function itself.
- */
-#define NCR_DEFINE_FUNCTION_ALIAS(ALIAS_NAME, ORIGINAL_NAME)           \
-	template <typename... Args>                                        \
-	inline auto ALIAS_NAME(Args &&... args)                            \
-		noexcept(noexcept(ORIGINAL_NAME(std::forward<Args>(args)...))) \
-		-> decltype(ORIGINAL_NAME(std::forward<Args>(args)...))        \
-	{                                                                  \
-		return ORIGINAL_NAME(std::forward<Args>(args)...);             \
-	}
-
-
-/*
- * NCR_DEFINE_FUNCTION_ALIAS_EXT - similar as above, but with additional
- * template arguments that are not captured in the case above.
- *
- * For instance, if one implements a function that gets specialized on its
- * return type, then the this could be used.
- *
- * Example:
- *
- *     // some template which has a template arguemnt for the return type
- *     template <typename T, typename U> T ncr_some_fun(int x);
- *
- *     // specialization
- *     template <typename U>
- *     float ncr_some_fun(int x)
- *     {
- *     	return (float)x;
- *     }
- *
- *     NCR_DEFINE_SHORT_NAME_EXT(some_fun, ncr_some_fun)
- */
-#define NCR_DEFINE_FUNCTION_ALIAS_EXT(ALIAS_NAME, ORIGINAL_NAME)                 \
-	template <typename... Args2, typename... Args>                               \
-	inline auto ALIAS_NAME(Args &&... args)                                      \
-		noexcept(noexcept(ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...))) \
-		-> decltype(ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...))        \
-	{                                                                            \
-		return ORIGINAL_NAME<Args2...>(std::forward<Args>(args)...);             \
-	}
-
-#define NCR_DEFINE_TYPE_ALIAS(ALIAS_NAME, ORIGINAL_NAME) \
-	using ALIAS_NAME = ORIGINAL_NAME
-
-
-/*
- * NCR_DEFINE_SHORT_NAME - define a short name for a longer one
- *
- * This allows to easily define short function names, e.g. without the ncr_
- * prefix, for a given function. Not the the alias definition will only take
- * place if NCR_ENABLE_SHORT_NAMES is defined.
- */
-#ifdef NCR_ENABLE_SHORT_NAMES
-	#define NCR_DEFINE_SHORT_FN_NAME(SHORT_NAME, LONG_NAME) \
-		NCR_DEFINE_FUNCTION_ALIAS(SHORT_NAME, LONG_NAME)
-
-	#define NCR_DEFINE_SHORT_FN_NAME_EXT(SHORT_FN_NAME, LONG_FN_NAME) \
-		NCR_DEFINE_FUNCTION_ALIAS_EXT(SHORT_FN_NAME, LONG_FN_NAME)
-
-	#define NCR_DEFINE_SHORT_TYPE_ALIAS(SHORT_NAME, LONG_NAME) \
-		NCR_DEFINE_TYPE_ALIAS(SHORT_NAME, LONG_NAME)
-#else
-	#define NCR_DEFINE_SHORT_FN_NAME(_0, _1)
-	#define NCR_DEFINE_SHORT_FN_NAME_EXT(_0, _1)
-	#define NCR_DEFINE_SHORT_TYPE_ALIAS(_0, _1)
-#endif
-
-
-/*
- * Count the number of arguments to a variadic macro. Up to 64 arguments are
- * supported
- */
-#define NCR_COUNT_ARGS2(X,_64,_63,_62,_61,_60,_59,_58,_57,_56,_55,_54,_53,_52,_51,_50,_49,_48,_47,_46,_45,_44,_43,_42,_41,_40,_39,_38,_37,_36,_35,_34,_33,_32,_31,_30,_29,_28,_27,_26,_25,_24,_23,_22,_21,_20,_19,_18,_17,_16,_15,_14,_13,_12,_11,_10,_9,_8,_7,_6,_5,_4,_3,_2,_1,N,...) N
-#define NCR_COUNT_ARGS(...) NCR_COUNT_ARGS2(0, __VA_ARGS__ ,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1)
-
-
-/*
- * Suppress warnings for unused arguments. Up to 10 arguments are supported in
- * the variadic version NCR_UNUSED
- */
-#define NCR_UNUSED_1(X)        (void)X;
-#define NCR_UNUSED_2(X0, X1)   NCR_UNUSED_1(X0); NCR_UNUSED_1(X1)
-#define NCR_UNUSED_3(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_2(__VA_ARGS__)
-#define NCR_UNUSED_4(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_3(__VA_ARGS__)
-#define NCR_UNUSED_5(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_4(__VA_ARGS__)
-#define NCR_UNUSED_6(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_5(__VA_ARGS__)
-#define NCR_UNUSED_7(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_6(__VA_ARGS__)
-#define NCR_UNUSED_8(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_7(__VA_ARGS__)
-#define NCR_UNUSED_9(X0, ...)  NCR_UNUSED_1(X0); NCR_UNUSED_8(__VA_ARGS__)
-#define NCR_UNUSED_10(X0, ...) NCR_UNUSED_1(X0); NCR_UNUSED_9(__VA_ARGS__)
-
-#define NCR_UNUSED_INDIRECT3(N, ...)  NCR_UNUSED_ ## N(__VA_ARGS__)
-#define NCR_UNUSED_INDIRECT2(N, ...)  NCR_UNUSED_INDIRECT3(N, __VA_ARGS__)
-#define NCR_UNUSED(...)               NCR_UNUSED_INDIRECT2(NCR_COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
-
-
-
-/*
- * macro to define an enum class of a specific underlying type, and also
- * generating a template specialization that returns the number of values in the
- * enum class.
- */
-template <typename T> constexpr size_t enum_count();
-
-#define NCR_ENUM_CLASS(EnumName, UnderlyingType, ...) \
-	enum class EnumName : UnderlyingType { \
-		__VA_ARGS__ \
-	}; \
-	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
-
-/*
- * A simple define to reduce the verbosity to declare a tuple. This is
- * particularly useful, for instance, in calls to random.hpp:random_coord.
- * In this example, the template accepts a variadic number of tuples, e.g.
- *
- *     auto xlim = std::tuple{0, 1};
- *     auto ylim = std::tuple{0, 10};
- *     auto coord = random_coord(rng, xlim, ylim);
- *
- * It would be better to avoid the temporary variables. However,
- * brace-initializers wont work, as there is no clear (read: acceptably sane)
- * way to turn an initializer_list into a tuple. With the following macro, it is
- * actually possible to succinctly write
- *
- *     auto coord = random_coord(_T(0, 1), _T(0, 10));
- *
- * without any local declaration of temporaries, or overly long calls that
- * include the specific tuple type.
- */
-#ifndef _tup
-	#define _tup(...) std::tuple{__VA_ARGS__}
-#endif
-
-
-/*
- * NCR_DEFINE_ENUM_FLAG_OPERATORS - define all binary operators used for flags
- *
- * This macro expands into functions for bit-wise and binary operations on
- * enums, e.g. given two enum values a and b, one might want to write `a |= b;`.
- * With the macro below, this will be possible.
- */
-#define NCR_DEFINE_ENUM_FLAG_OPERATORS(ENUM_T) \
-	inline ENUM_T operator~(ENUM_T a) { return static_cast<ENUM_T>(~ncr::to_underlying(a)); } \
-	inline ENUM_T operator|(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T operator&(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T operator^(ENUM_T a, ENUM_T b)    { return static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); } \
-	inline ENUM_T& operator|=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) | ncr::to_underlying(b)); } \
-	inline ENUM_T& operator&=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) & ncr::to_underlying(b)); } \
-	inline ENUM_T& operator^=(ENUM_T &a, ENUM_T b) { return a = static_cast<ENUM_T>(ncr::to_underlying(a) ^ ncr::to_underlying(b)); }
-
-
-
-
-
-namespace ncr {
-
-
-/*
- * compile time count of elements in an array. If standard library is used,
- * could also use std::size instead.
- */
-template <std::size_t N, class T>
-constexpr std::size_t len(T(&)[N]) { return N; }
-
-
-
-
-/*
- * to_underlying - Get the underlying type of some type
- *
- * This is an implementation of C++23's to_underlying function, which is not yet
- * available in C++20 but handy for casting enum-structs to their underlying
- * type (see NCR_DEFINE_ENUM_FLAG_OPERATORS for an example).
- */
-template <typename E>
-constexpr typename std::underlying_type<E>::type
-to_underlying(E e) noexcept {
-    return static_cast<typename std::underlying_type<E>::type>(e);
-}
-
-
-/*
- * get_index_of - get the index of a pointer to T in a vector of T
- *
- * This function returns an optional to indicate if the pointer to T was found
- * or not.
- */
-template <typename T>
-inline std::optional<size_t>
-get_index_of(std::vector<T*> vec, T *needle)
-{
-	for (size_t i = 0; i < vec.size(); i++)
-		if (vec[i] == needle)
-			return i;
-	return {};
-}
-
-
-/*
- * determine if a container contains a certain element or not
- */
-template <typename ContainerT, typename U>
-inline bool
-contains(const ContainerT &container, const U &needle)
-{
-	auto it = std::find(container.begin(), container.end(), needle);
-	return it != container.end();
-}
-
-
-/*
- * hexdump - generate a hexdump for a buffer similar to hex editors
- */
-inline void
-hexdump(std::ostream& os, const std::vector<uint8_t> &data)
-{
-	std::ios old_state(nullptr);
-	old_state.copyfmt(os);
-
-	const size_t bytes_per_line = 16;
-	for (size_t offset = 0; offset < data.size(); offset += bytes_per_line) {
-		os << std::setw(8) << std::setfill('0') << std::hex << offset << ": ";
-		for (size_t i = 0; i < bytes_per_line; ++i) {
-			// missing bytes will be replaced with whitespace
-			if (offset + i < data.size())
-				os << std::setw(2) << std::setfill('0') << std::hex << static_cast<i32>(data[offset + i]) << ' ';
-			else
-				os << "   ";
-		}
-		os << " | ";
-		for (size_t i = 0; i < bytes_per_line; ++i) {
-			if (offset + i >= data.size())
-				break;
-
-			// non-printable characters will be replaced with '.'
-			char c = data[offset + i];
-			if (c < 32 || c > 126)
-				c = '.';
-			os << c;
-		}
-		os << "\n";
-	}
-	// reset to default
-	os << std::setfill(os.widen(' '));
-	os.copyfmt(old_state);
-}
-
-
-} // namespace ncr
-
-#endif /* _65fc1481d8d149029547d3932c93f2e0_ */
-
 /*
  * ncr_zip - zip backend interface declaration
  *
@@ -3954,6 +4361,7 @@ namespace zip {
 
 
 
+
 namespace ncr { namespace numpy {
 
 
@@ -3962,10 +4370,7 @@ namespace ncr { namespace numpy {
  */
 struct npyfile;
 struct npzfile;
-enum class result: u64;
 enum class source_type: u16;
-
-typedef std::variant<result, ndarray, npzfile> variant_result;
 
 
 /*
@@ -4059,12 +4464,12 @@ struct npyfile
 		file_size                   {0};
 
 	// storage for the magic string.
-	std::array<u8, magic_byte_count>
-		magic                       {};
+	u8
+		magic[magic_byte_count]     = {};
 
 	// storage for the version
-	std::array<u8, version_byte_count>
-		version                     {};
+	u8
+		version[version_byte_count] = {};
 
 	// the numpy header which describes which data type is stored in this numpy
 	// array and how it is stored. Essentially this is a string representation
@@ -4085,15 +4490,15 @@ struct npyfile
  * breaking the POD structure of npyfile, this is a free function.
  */
 inline void
-clear(npyfile &npy)
+release(npyfile &npy)
 {
 	npy.header_size_byte_count = 0;
 	npy.header_size            = 0;
 	npy.data_offset            = 0;
 	npy.data_size              = 0;
 	npy.file_size              = 0;
-	npy.magic.fill(0);
-	npy.version.fill(0);
+	std::memset(npy.magic,   0, npyfile::magic_byte_count * sizeof(u8));
+	std::memset(npy.version, 0, npyfile::version_byte_count * sizeof(u8));
 	npy.header.clear();
 	npy.streaming              = false;
 }
@@ -4131,98 +4536,16 @@ struct npzfile
 
 // retain POD-like structure of npzfile and provide a free function to clear it
 inline void
-clear(npzfile &npz)
+release(npzfile &npz)
 {
+	for (auto &arr: npz.arrays)
+		arr.second->release();
+
 	npz.names.clear();
 	npz.npys.clear();
 	npz.arrays.clear();
 }
 
-
-#define NCR_NUMPY_ERROR_CODE_LIST(_)                                          \
-	_(ok                                     , 0)                             \
-	/* warnings about missing fields. Note that not all fields are required   \
-	 * and it might not be a problem for an application if they are not       \
-	 * present. However, inform the user about this state */                  \
-	_(warning_missing_descr                  , 1ul << 0)                      \
-	_(warning_missing_fortran_order          , 1ul << 1)                      \
-	_(warning_missing_shape                  , 1ul << 2)                      \
-	/* error codes. in particular for nested/structured arrays, it might be   \
-	 * helpful to know precisely what went wrong. */                          \
-	_(error_wrong_filetype                   , 1ul << 3)                      \
-	_(error_file_not_found                   , 1ul << 4)                      \
-	_(error_file_exists                      , 1ul << 5)                      \
-	_(error_file_open_failed                 , 1ul << 6)                      \
-	_(error_file_truncated                   , 1ul << 7)                      \
-	_(error_file_write_failed                , 1ul << 8)                      \
-	_(error_file_read_failed                 , 1ul << 9)                      \
-	_(error_file_close                       , 1ul << 10)                     \
-	_(error_unsupported_file_format          , 1ul << 11)                     \
-	_(error_duplicate_array_name             , 1ul << 12)                     \
-	/* */                                                                     \
-	_(error_magic_string_invalid             , 1ul << 13)                     \
-	_(error_version_not_supported            , 1ul << 14)                     \
-	_(error_header_invalid_length            , 1ul << 15)                     \
-	_(error_header_truncated                 , 1ul << 16)                     \
-	_(error_header_parsing_error             , 1ul << 17)                     \
-	_(error_header_invalid                   , 1ul << 18)                     \
-	_(error_header_empty                     , 1ul << 19)                     \
-	/* */                                                                     \
-	_(error_descr_invalid                    , 1ul << 20)                     \
-	_(error_descr_invalid_type               , 1ul << 21)                     \
-	_(error_descr_invalid_string             , 1ul << 22)                     \
-	_(error_descr_invalid_data_size          , 1ul << 23)                     \
-	_(error_descr_list_empty                 , 1ul << 24)                     \
-	_(error_descr_list_invalid_type          , 1ul << 25)                     \
-	_(error_descr_list_incomplete_value      , 1ul << 26)                     \
-	_(error_descr_list_invalid_value         , 1ul << 27)                     \
-	_(error_descr_list_invalid_shape         , 1ul << 28)                     \
-	_(error_descr_list_invalid_shape_value   , 1ul << 29)                     \
-	_(error_descr_list_subtype_not_supported , 1ul << 30)                     \
-	/* */                                                                     \
-	_(error_fortran_order_invalid_value      , 1ul << 31)                     \
-	_(error_shape_invalid_value              , 1ul << 32)                     \
-	_(error_shape_invalid_shape_value        , 1ul << 33)                     \
-	_(error_item_size_mismatch               , 1ul << 34)                     \
-	_(error_data_size_mismatch               , 1ul << 35)                     \
-	_(error_unavailable                      , 1ul << 36)                     \
-    /* */                                                                     \
-	_(error_mmap_failed                      , 1ul << 37)                     \
-	_(error_seek_failed                      , 1ul << 38)                     \
-	_(error_reader_not_open                  , 1ul << 39)                     \
-	_(error_invalid_item_offset              , 1ul << 40)                     \
-
-#define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
-	NAME = VALUE,
-
-#define NCR_NUMPY_ERROR_CODE_STRINGIFY(NAME, VALUE) \
-	{result::NAME, #NAME},
-
-// need to bring enum_count into this namespace for the MACRO to work (TODO:
-// fix this)
-template <typename T> constexpr size_t enum_count();
-NCR_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
-
-NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
-
-// map from error code to string for pretty printing the error code. This is a
-// bit more involved than just listing the strings, because result codes can be
-// OR-ed together, i.e. a result code might have several codes that are set.
-constexpr std::array<std::pair<result, const char*>, enum_count<result>()>
-result_strings = {{
-	NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_STRINGIFY)
-}};
-
-
-inline bool
-is_error(result r)
-{
-	return
-		r != result::ok &&
-		r != result::warning_missing_descr &&
-		r != result::warning_missing_shape &&
-		r != result::warning_missing_fortran_order;
-}
 
 
 /*
@@ -4346,10 +4669,11 @@ requires Readable<Reader, decltype(npyfile::magic)>
 result
 read_magic_string(Reader &source, npyfile &npy)
 {
-	constexpr std::array<uint8_t, 6> magic = {0x93, 'N', 'U', 'M', 'P', 'Y'};
+	constexpr u8 magic[] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
 	if (source.read(npy.magic, npyfile::magic_byte_count) != npyfile::magic_byte_count)
 		return result::error_magic_string_invalid;
-	if (!std::equal(npy.magic.begin(), npy.magic.end(), magic.begin()))
+
+	if (!std::equal(npy.magic, npy.magic + npyfile::magic_byte_count, magic))
 		return result::error_magic_string_invalid;
 
 	return result::ok;
@@ -4441,10 +4765,10 @@ read_header(Reader &source, npyfile &npy)
  * parse_descr_string - turn a string from the parser result for the descirption string into a dtype
  */
 inline result
-parse_descr_string(pyparser::parse_result *descr, dtype &dt)
+parse_descr_string(PyParser::ParseResult *descr, dtype &dt)
 {
 	// sanity check: test if the data type is actually a string or not
-	if (descr->dtype != pyparser::type::string)
+	if (descr->dtype != PyParser::Type::String)
 		return result::error_descr_invalid_string;
 
 	if (std::distance(descr->begin, descr->end) < 3)
@@ -4472,7 +4796,7 @@ parse_descr_string(pyparser::parse_result *descr, dtype &dt)
  * parse_descr_list - turn a list (from a description string parse result) into a dtype
  */
 inline result
-parse_descr_list(pyparser::parse_result *descr, dtype &dt)
+parse_descr_list(PyParser::ParseResult *descr, dtype &dt)
 {
 	// the descr field of structured arrays is a list of tuples (n, t, s), where
 	// n is the name of the field, t is the type, s is the shape. Note that the
@@ -4484,7 +4808,7 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 
 	for (auto &node: descr->nodes) {
 		// check data type of the node
-		if (node->dtype != pyparser::type::tuple)
+		if (node->dtype != PyParser::Type::Tuple)
 			return result::error_descr_list_invalid_type;
 
 		// needs at least 2 subnodes, i.e. tuple (n, t)
@@ -4506,13 +4830,13 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 		result res;
 		switch (node->nodes[1]->dtype) {
 			// string?
-			case pyparser::type::string:
+			case PyParser::Type::String:
 				if ((res = parse_descr_string(node->nodes[1].get(), field)) != result::ok)
 					return res;
 				break;
 
 			// recursively go through the list
-			case pyparser::type::list:
+			case PyParser::Type::List:
 				if ((res = parse_descr_list(node->nodes[1].get(), field)) != result::ok)
 					return res;
 				break;
@@ -4525,12 +4849,12 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dt)
 		// third field (optional): shape
 		if (node->nodes.size() > 2) {
 			// test the type. must be a tuple
-			if (node->nodes[2]->dtype != pyparser::type::tuple)
+			if (node->nodes[2]->dtype != PyParser::Type::Tuple)
 				return result::error_descr_list_invalid_shape;
 
 			for (auto &n: node->nodes[2]->nodes) {
 				// must be an integer value
-				if (n->dtype != pyparser::type::integer)
+				if (n->dtype != PyParser::Type::Integer)
 					return result::error_descr_list_invalid_shape_value;
 				field.shape.push_back(n->value.l);
 			}
@@ -4545,14 +4869,14 @@ parse_descr_list(pyparser::parse_result *descr, dtype &dt)
  * parse_descr - turn a parser result into a dtype
  */
 inline result
-parse_descr(pyparser::parse_result *descr, dtype &dt)
+parse_descr(PyParser::ParseResult *descr, dtype &dt)
 {
 	if (!descr)
 		return result::error_descr_invalid;
 
 	switch (descr->dtype) {
-		case pyparser::type::string: return parse_descr_string(descr, dt);
-		case pyparser::type::list:   return parse_descr_list(descr, dt);
+		case PyParser::Type::String: return parse_descr_string(descr, dt);
+		case PyParser::Type::List:   return parse_descr_list(descr, dt);
 		default:                     return result::error_descr_invalid_type;
 	}
 }
@@ -4586,13 +4910,13 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 	// take much time to convert and thus have negligible impact on performance.
 
 	// try to parse the header
-	pyparser parser;
+	PyParser parser;
 	auto pres = parser.parse(npy.header);
 	if (!pres)
 		return result::error_header_parsing_error;
 
 	// header must be one parse-node of type dict
-	if (pres->nodes.size() != 1 || pres->nodes[0]->dtype != pyparser::type::dict)
+	if (pres->nodes.size() != 1 || pres->nodes[0]->dtype != PyParser::Type::Dict)
 		return result::error_header_invalid;
 
 	// the dict itself must have child-nodes
@@ -4609,7 +4933,7 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 	// kvpairs, each having the key as node 0 and value as node 1
 	for (auto &kv: root_dict->nodes) {
 		// check the parsed type for consistency
-		if (kv->dtype != pyparser::type::kvpair || kv->nodes.size() != 2)
+		if (kv->dtype != PyParser::Type::KVPair || kv->nodes.size() != 2)
 			return result::error_header_invalid;
 
 		// descr, might be a string or a list of tuples
@@ -4622,7 +4946,7 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 
 		// determine if the array data is in fortran order or not
 		if (kv->nodes[0]->equals("fortran_order")) {
-			if (kv->nodes[1]->dtype != pyparser::type::boolean)
+			if (kv->nodes[1]->dtype != PyParser::Type::Boolean)
 				return result::error_fortran_order_invalid_value;
 			order = kv->nodes[1]->value.b ? storage_order::col_major : storage_order::row_major;
 			res &= ~result::warning_missing_fortran_order;
@@ -4631,14 +4955,14 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 		// read the shape of the array (NOTE: this is *not* the shape of a data
 		// type, but the shape of the array)
 		if (kv->nodes[0]->equals("shape")) {
-			if (kv->nodes[1]->dtype != pyparser::type::tuple)
+			if (kv->nodes[1]->dtype != PyParser::Type::Tuple)
 				return result::error_shape_invalid_value;
 
 			// read each shape value
 			shape.clear();
 			for (auto &n: kv->nodes[1]->nodes) {
 				// must be an integer value
-				if (n->dtype != pyparser::type::integer)
+				if (n->dtype != PyParser::Type::Integer)
 					return result::error_shape_invalid_shape_value;
 				shape.push_back(n->value.l);
 			}
@@ -4785,8 +5109,18 @@ from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 	// erase the entire header block. what's left is the raw data of the ndarray
 	buffer.erase(buffer.begin(), buffer.begin() + npy.data_offset);
 
-	// build the ndarray from the data that we read by moving into it
-	dest.assign(std::move(dt), std::move(shape), std::move(buffer), order);
+	// create a new npybuffer with a vector backend. we can move the data right
+	// into it
+	npybuffer* npybuf = new npybuffer(npybuffer::type::vector);
+	npybuf->vector    = make_vector_buffer(std::move(buffer));
+
+	// build the ndarray from the data that we read by moving into it. we also
+	// transfer ownership of the npybuf to the array. the user is responsible to
+	// call release on the array
+	dest.assign(std::move(dt),
+				std::move(shape),
+				npybuf,
+				order);
 
 	return res;
 }
@@ -4852,8 +5186,8 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 
 		// store the information in an npz_file
 		npz.names.push_back(array_name);
-		npz.npys.insert(std::make_pair(array_name, std::make_unique<npyfile>(*npy)));
-		npz.arrays.insert(std::make_pair(array_name, std::make_unique<ndarray>(*array)));
+		npz.npys.insert(std::make_pair(array_name, std::unique_ptr<npyfile>(npy)));
+		npz.arrays.insert(std::make_pair(array_name, std::unique_ptr<ndarray>(array)));
 	}
 
 	// close the zip backend and release it again
@@ -4990,10 +5324,8 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	result res = result::ok;
 	std::ifstream file;
 	if ((res = open_npy(filepath, file), is_error(res))) return res;
-
-	return from_npy_ifstream(file, array, npy);
+	return from_npy_ifstream<NDArrayType, unsafe_read>(file, array, npy);
 }
-
 
 
 
@@ -5113,20 +5445,6 @@ from_npy(std::filesystem::path filepath, G array_properties_callback, F data_cal
 }
 
 
-
-
-//
-// helpers to extract the type from the variant. If you're sure about the file
-// type (npz / npy), it's recommended to directly use the from_* functions
-//
-inline result  get_result(variant_result   &res) { return std::get<result>(std::forward<variant_result>(res));  }
-inline result  get_result(variant_result  &&res) { return std::get<result>(std::forward<variant_result>(res));  }
-inline ndarray get_ndarray(variant_result  &res) { return std::get<ndarray>(std::forward<variant_result>(res)); }
-inline ndarray get_ndarray(variant_result &&res) { return std::get<ndarray>(std::forward<variant_result>(res)); }
-inline npzfile get_npzfile(variant_result  &res) { return std::get<npzfile>(std::forward<variant_result>(res)); }
-inline npzfile get_npzfile(variant_result &&res) { return std::get<npzfile>(std::forward<variant_result>(res)); }
-
-
 /*
  * load - high level API which tries to load whatever file is given
  *
@@ -5137,41 +5455,17 @@ inline npzfile get_npzfile(variant_result &&res) { return std::get<npzfile>(std:
  *       array (this way the array will be backed by the memory mapped data,
  *       similar to numpy.memmap)
  */
-inline variant_result
-load(std::filesystem::path filepath)
+inline result
+load(std::filesystem::path filepath, ndarray &arr)
 {
-	// open the file
-	result res;
-	std::ifstream file;
-	if ((res = open_fstream(filepath, file)) != result::ok) {
-		return res;
-	}
+	return from_npy(filepath, arr);
+}
 
-	// return the full npz if this is an archive, so that users can work with
-	// the result similar to what they would get from numpy.load
-	if (is_zip_file(file)) {
-		file.close();
-		npzfile npz;
-		if ((res = from_npz(filepath, npz)) != result::ok)
-			return res;
-		return npz;
-	}
 
-	// users are usually only interested in the array when loading from .npy
-	// TODO: from_npy opens the file, again. instead of closing it and opening
-	// it immediately again, maybe use from_stream to read the file from an
-	// ifstream or pass the ifstream f forward.
-	ndarray arr;
-	file.seekg(0);
-	if ((res = from_npy_ifstream(file, arr, nullptr), is_error(res))) {
-		// in case the magic string is invalid, then this is not a numpy file
-		if (res == result::error_magic_string_invalid)
-			return result::error_unsupported_file_format;
-		else
-			// something else happened
-			return res;
-	}
-	return arr;
+inline result
+loadz(std::filesystem::path filepath, npzfile &npz)
+{
+	return from_npz(filepath, npz);
 }
 
 
@@ -5225,8 +5519,9 @@ to_npy_buffer(const ndarray &arr, u8_vector &buffer)
 		std::memcpy(buf_hlen, &header_length, sizeof(u32));
 
 	// copy the rest of the array
-	const u8_vector payload = arr.data();
-	buffer.insert(buffer.end(), payload.begin(), payload.end());
+	const u8* ptr = arr.data();
+	const size_t size = arr.bytesize();
+	buffer.insert(buffer.end(), ptr, ptr + size);
 
 	return result::ok;
 }
@@ -5378,6 +5673,527 @@ savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrap
 
 
 
+template <typename... Args>
+void
+release(Args&&... args)
+{
+	(release(args), ...);
+}
+
+
+
+enum class source_type : u16 {
+	mmap,
+	fstream,
+	buffered,
+};
+
+
+template <source_type>
+struct npysource;
+
+
+template<>
+struct npysource<source_type::mmap>
+{
+	mmap_buffer* buf;
+
+	inline result
+	open(std::filesystem::path filepath)
+	{
+		if (buf)
+			close();
+		buf = new mmap_buffer();
+
+		ncr::numpy::open(filepath.c_str(), buf);
+
+		// try to open the foo
+		int fd = ::open(filepath.c_str(), O_RDONLY);
+		if (fd == -1) {
+			return result::error_file_open_failed;
+		}
+
+		// try to memmap the foo
+		buf->size = lseek(fd, 0, SEEK_END);
+		lseek(fd, 0, SEEK_SET);
+		buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ, MAP_PRIVATE, fd, 0);
+		::close(fd);
+		if (buf->data == MAP_FAILED) {
+			close();
+			return result::error_mmap_failed;
+		}
+		buf->position = 0;
+		return result::ok;
+	}
+
+	inline size_t
+	size()
+	{
+		return buf->size;
+	}
+
+	inline result
+	seek(size_t offset, std::ios_base::seekdir way = std::ios::beg)
+	{
+		switch (way) {
+		case std::ios::beg:
+			buf->position = offset;
+			break;
+		case std::ios::cur:
+			buf->position = buf->position + offset;
+			break;
+		case std::ios::end:
+			buf->position = buf->size - offset;
+			break;
+		}
+		return result::ok;
+	}
+
+	template <Writable<u8> D>
+	std::size_t
+	read(D &&dest, std::size_t size)
+	{
+		auto first = std::begin(dest);
+        auto last = std::end(dest);
+        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+		size = (buf->position + size > buf->size) ? buf->size - buf->position : size;
+		std::copy_n(buf->data + buf->position, size, first);
+		buf->position += size;
+		return size;
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t
+	read(T* dest, std::size_t size)
+	{
+		return read(std::span<T>(dest, size), size);
+	}
+
+	std::span<uint8_t>
+	view(std::size_t size)
+	{
+		return std::span<uint8_t>(buf->data + buf->position,
+						          buf->data + buf->position + size);
+	}
+
+	inline result
+	close()
+	{
+		result res = result::ok;
+		if ((res = numpy::close(buf), is_error(res))) return res;
+
+		delete buf;
+		buf = nullptr;
+		return res;
+	}
+
+	inline bool
+	eof() noexcept {
+		return buf->position >= buf->size;
+	}
+};
+
+
+template<>
+struct npysource<source_type::fstream>
+{
+	std::ifstream fstream;
+	size_t total_size;
+
+	inline result
+	open(std::filesystem::path filepath)
+	{
+		namespace fs = std::filesystem;
+
+		// test if the file exists
+		if (!fs::exists(filepath))
+			return result::error_file_not_found;
+
+		// attempt to open
+		fstream.open(filepath, std::ios::binary);
+		if (!(fstream))
+			return result::error_file_open_failed;
+
+		total_size = get_file_size(fstream);
+		return result::ok;
+	}
+
+	inline size_t
+	size()
+	{
+		return total_size;
+	}
+
+	inline result
+	seek(size_t offset, std::ios_base::seekdir way = std::ios::beg)
+	{
+		fstream.seekg(offset, way);
+		if (fstream.fail() or fstream.bad())
+			return result::error_seek_failed;
+		return result::ok;
+	}
+
+	template <Writable<u8> D>
+	std::size_t
+	read(D &&dest, std::size_t size)
+	{
+		auto first = std::begin(dest);
+		auto last = std::end(dest);
+		size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+
+		fstream.read(reinterpret_cast<char *>(&(*first)), size);
+		return static_cast<std::size_t>(fstream.gcount());
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t
+	read(T* dest, std::size_t size)
+	{
+		return read(std::span(dest, size), size);
+	}
+
+	inline result
+	close()
+	{
+		fstream.close();
+		return result::ok;
+	}
+
+	inline bool
+	eof() noexcept {
+		// peek one character to check if this is eof in the stream
+		fstream.peek();
+		return fstream.eof();
+	}
+
+	inline bool
+	fail() noexcept {
+		return fstream.fail();
+	}
+};
+
+
+template<>
+struct npysource<source_type::buffered>
+{
+	vector_buffer *buffer;
+
+	size_t    total_size;
+	size_t    position;
+
+	inline result
+	open(std::filesystem::path filepath)
+	{
+		constexpr bool unsafe_read = false;
+
+		std::ifstream fstream;
+		fstream.open(filepath, std::ios::binary);
+		if (!fstream)
+			return result::error_file_open_failed;
+
+		total_size = get_file_size(fstream);
+		buffer = make_vector_buffer(total_size);
+
+		if constexpr (unsafe_read)
+			fstream.read(reinterpret_cast<char*>(buffer->data.data()), total_size);
+		else
+			buffer->data.assign(std::istreambuf_iterator<char>(fstream), std::istreambuf_iterator<char>());
+
+		fstream.close();
+		position   = 0;
+		return result::ok;
+	};
+
+	inline size_t
+	size()
+	{
+		return total_size;
+	}
+
+	inline result
+	seek(size_t offset, std::ios_base::seekdir way = std::ios::beg)
+	{
+		switch (way) {
+		case std::ios::beg:
+			position = offset;
+			break;
+		case std::ios::cur:
+			position = position + offset;
+			break;
+		case std::ios::end:
+			position = total_size - offset;
+			break;
+		}
+		if (position > total_size)
+			return result::error_seek_failed;
+		return result::ok;
+	}
+
+	template <Writable<u8> D>
+	std::size_t
+	read(D &&dest, std::size_t size)
+	{
+		auto first = std::begin(dest);
+        auto last = std::end(dest);
+        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
+		size = (position + size > buffer->data.size()) ? buffer->data.size() - position : size;
+		std::copy_n(buffer->data.begin() + position, size, first);
+		position += size;
+		return size;
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t
+	read(T* dest, std::size_t size)
+	{
+		return read(std::span<T>(dest, size), size);
+	}
+
+	inline std::span<uint8_t>
+	view(std::size_t size)
+	{
+		return std::span<uint8_t>(buffer->data.begin() + position,
+						          buffer->data.begin() + position + size);
+	}
+
+	inline result
+	close()
+	{
+		delete buffer;
+		buffer = nullptr;
+		return result::ok;
+	}
+
+	inline bool
+	eof() noexcept {
+		return position >= total_size;
+	}
+};
+
+
+template <typename Source>
+struct npyreader_iterator_base
+{
+	using difference_type = std::ptrdiff_t;
+
+	npyreader_iterator_base(Source& src, size_t item_sz, bool end = false)
+		: source(src), item_size(item_sz), buffer(item_sz), is_end(end), dirty_buffer(true) {}
+
+	npyreader_iterator_base& operator++() {
+		seek_next();
+		return *this;
+	}
+
+	npyreader_iterator_base operator++(int) {
+		auto tmp = *this;
+		++(*this);
+		return tmp;
+	}
+
+	bool operator==(const npyreader_iterator_base& other) const { return is_end == other.is_end; }
+	bool operator!=(const npyreader_iterator_base& other) const { return !(*this == other); }
+
+protected:
+	Source& source;
+	size_t item_size;
+	u8_vector buffer;
+	bool is_end;
+	bool dirty_buffer;
+
+	void seek_next() {
+		// in case of a buffered source, the call to read() moves the read
+		// cursor forward already. to avoid moving over (seeking foward over) an
+		// item, we check if the buffer is dirty or not. if the buffer is not
+		// dirty, then we "just read" (as in past tense), and the source's read
+		// cursor is already at the next item. if the buffer is dirty, then it's
+		// not clear when the last actual read from the source happened.
+		// In case of a Viewable source, we don't read into the buffer in the
+		// first place to avoid copying
+		bool do_seek = Viewable<Source> || dirty_buffer;
+		if (do_seek)
+			source.seek(item_size, std::ios::cur);
+
+		if (source.eof())
+			is_end = true;
+
+		dirty_buffer = true;
+	}
+
+	void buffer_next_item() {
+		// we only need to buffer the next item if the buffer_position is equals
+		// the position (reading will move the source character pointer)
+		if (!dirty_buffer)
+			return;
+
+		if (source.eof()) {
+			is_end = true;
+		} else {
+			// read extracts the characters from the underlying source. need to
+			// keep track of this
+			auto bytes_read = source.read(buffer.data(), item_size);
+			dirty_buffer = false;
+
+			if (bytes_read != item_size) {
+				is_end = true;
+			}
+		}
+	}
+};
+
+
+template <typename Source>
+struct npyreader_iterator : public npyreader_iterator_base<Source>
+{
+	using iterator_type     = npyreader_iterator<Source>;
+	using iterator_category = std::input_iterator_tag;
+	using value_type        = std::span<u8>;
+	using pointer           = std::span<u8>*;
+	using reference         = std::span<u8>;
+
+	npyreader_iterator(Source& src, size_t item_sz, bool end = false)
+		: npyreader_iterator_base<Source>(src, item_sz, end) {}
+
+	reference operator*() {
+		if constexpr (Viewable<Source>) {
+			return this->source.view(this->item_size);
+		} else {
+			this->buffer_next_item();
+			return this->buffer;
+		}
+	}
+};
+
+
+template <typename Source, typename T>
+struct typed_npyreader_iterator : public npyreader_iterator_base<Source>
+{
+	using iterator_type     = typed_npyreader_iterator<Source, T>;
+	using iterator_category = std::input_iterator_tag;
+	using value_type        = T;
+	using pointer           = T*;
+	using reference         = T;
+
+	typed_npyreader_iterator(Source& src, size_t item_sz, bool end = false)
+		: npyreader_iterator_base<Source>(src, item_sz, end)
+	{
+		if (sizeof(T) != item_sz)
+			throw std::runtime_error("Type size mismatch with item_size");
+	}
+
+	reference operator*() {
+		T item;
+		if constexpr (Viewable<Source>) {
+			auto view = this->source.view(this->item_size);
+			std::memcpy(&item, view.data(), sizeof(T));
+		} else {
+			this->buffer_next_item();
+			std::memcpy(&item, this->buffer.data(), sizeof(T));
+		}
+		return item;
+	}
+};
+
+
+template <source_type E = source_type::mmap>
+struct npyreader
+{
+	using type        = npyreader<E>;
+	using source_type = npysource<E>;
+	using iterator    = npyreader_iterator<source_type>;
+
+	dtype           dt;
+	u64_vector      shape;
+	storage_order   order;
+	npyfile         npy;
+	source_type     source;
+	bool            is_open = false;
+
+	iterator begin() { return iterator(source, dt.item_size); }
+	iterator end()   { return iterator(source, dt.item_size, true); }
+
+	result
+	seek(size_t item_index)
+	{
+		if (!is_open)
+			return result::error_reader_not_open;
+
+		size_t offset = npy.data_offset + dt.item_size * item_index;
+		if (offset > source.size())
+			return result::error_invalid_item_offset;
+
+		source.seek(offset);
+		return result::ok;
+	}
+
+	template <typename T>
+	struct typed_view {
+		using source_type = npysource<E>;
+		using iterator    = typed_npyreader_iterator<source_type, T>;
+
+		typed_view(source_type &src, dtype& dtp)
+		: source(src), dt(dtp) {}
+
+		iterator begin() { return iterator(source, dt.item_size); }
+		iterator end()   { return iterator(source, dt.item_size, true); }
+
+		source_type& source;
+		dtype&       dt;
+	};
+
+	template <typename T>
+	auto as() {
+		return typed_view<T>(source, dt);
+	}
+
+	template <typename T = std::span<uint8_t>> requires Viewable<source_type>
+	T view()
+	{
+		if constexpr (std::is_same_v<T, std::span<uint8_t>>) {
+			// forward the subrange from the source
+			return source.view(dt.item_size);
+		}
+		else {
+			if (sizeof(T) != dt.item_size)
+				throw std::runtime_error("Type size mismatch with item_size");
+
+			T value;
+			auto buf = source.view(dt.item_size);
+			std::memcpy(&value, buf.data(), sizeof(T));
+			return value;
+		}
+	}
+};
+
+
+template <source_type E>
+inline result
+open(std::filesystem::path filepath, npyreader<E>& reader)
+{
+	result res;
+
+	if ((res = reader.source.open(filepath),
+		 is_error(res))) return res;
+	if ((res = process_file_header(reader.source, reader.npy, reader.dt, reader.shape, reader.order),
+		 is_error(res))) return res;
+
+	reader.is_open = true;
+	return res;
+}
+
+
+template <source_type E>
+inline result
+close(npyreader<E>& reader)
+{
+	auto res = reader.source.close();
+	reader.is_open = false;
+	return res;
+}
+
+
 
 
 }} // ncr::numpy
@@ -5389,7 +6205,7 @@ savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrap
 /*
  * the zip implementation can be actively turned off by setting the compiler
  * flag NCR_NUMPY_DISABLE_ZIP_LIBZIP. This allows to develop custom other zip
- * backends and disbale the libzip implementation that ships with ncr_numpy.
+ * backends and disable the libzip implementation that ships with ncr_numpy.
  */
 #ifndef NCR_NUMPY_DISABLE_ZIP_LIBZIP
 /*

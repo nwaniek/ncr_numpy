@@ -1,12 +1,23 @@
 /*
  * example.cpp - examples for the usage of ncr_numpy
  *
- * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
+ * SPDX-FileCopyrightText: 2023-2025 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
+
+#define NCR_NUMPY_STANDALONE
 #define NCR_ENABLE_STREAM_OPERATORS
-#include "ncr_numpy.hpp"
+#include "../ncr_numpy.hpp"
+// #ifdef NCR_NUMPY_STANDALONE
+// #include "../../meta/staging/ncr_numpy.hpp"
+// #else
+// #define NCR_ENABLE_STREAM_OPERATORS
+// #include <ncr/strutil.hpp>
+// #include <ncr/filesystem.hpp>
+// #include <ncr/numpy.hpp>
+// #include <ncr/impl/zip_libzip.hpp>
+// #endif
 
 
 #ifndef VERSION_MAJOR
@@ -29,6 +40,7 @@
 using namespace ncr;
 
 
+#ifdef NCR_NUMPY_STANDALONE
 /*
  * strpad - pad a string with whitespace to make it at least length chars long
  */
@@ -71,6 +83,7 @@ read_file(std::filesystem::path filepath, u8_vector &buffer)
 	}
 	return true;
 }
+#endif
 
 
 /*
@@ -110,6 +123,9 @@ example_ndarray()
 		}
 
 	std::cout << "\n";
+
+	// need to explicitly release memory!
+	numpy::release(array);
 }
 
 
@@ -122,44 +138,47 @@ example_simple_api(size_t padwidth = 30)
 	std::cout << "Simple API\n";
 	std::cout << "----------";
 
-	auto val = numpy::load("assets/in/simple.npy");
+
+	numpy::ndarray arr;
+
+	auto res = numpy::load("assets/in/simple.npy", arr);
 	std::cout << std::boolalpha << "\n";
-	std::cout << strpad("simple.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
-	print_tensor<i64>(std::get<numpy::ndarray>(val), "  ");
+	std::cout << strpad("simple.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	print_tensor<i64>(arr, "  ");
 	std::cout << "\n\n";
+	numpy::release(arr);
 
 
-	val = numpy::load("assets/in/simpletensor1.npy");
-	std::cout << strpad("simpletensor1.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
-	print_tensor<f64>(std::get<numpy::ndarray>(val), "  ");
+	res = numpy::load("assets/in/simpletensor1.npy", arr);
+	std::cout << strpad("simpletensor1.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	print_tensor<f64>(arr, "  ");
 	std::cout << "\n\n";
+	numpy::release(arr);
 
 
-	val = numpy::load("assets/in/simpletensor2.npy");
-	std::cout << strpad("simpletensor2.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
-	print_tensor<i64>(std::get<numpy::ndarray>(val), "  ");
+	res = numpy::load("assets/in/simpletensor2.npy", arr);
+	std::cout << strpad("simpletensor2.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	print_tensor<i64>(arr, "  ");
 	std::cout << "\n\n";
+	numpy::release(arr);
 
 
-	val = numpy::load("assets/in/complex.npy");
-	std::cout << strpad("complex.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
+	res = numpy::load("assets/in/complex.npy", arr);
+	std::cout << strpad("complex.npy:", padwidth) << (res == numpy::result::ok) << "\n";
 	// the data in this tensor needs a byteswap because it is stored in
 	// big-endian, while most systems actually are little-endian. We can apply
 	// the transform in the print_tensor function
 	std::cout << "big-endian complex valued array transformed to little-endian on-the-fly:\n";
-	print_tensor<c64>(std::get<numpy::ndarray>(val), "  ", [](c64 val){ return bswap<c64>(val); });
+	print_tensor<c64>(arr, "  ", [](c64 val){ return bswap<c64>(val); });
 	std::cout << "\n\n";
-
 	// another way to transform values is with the 'transform' method, which
 	// transforms them given a function during the call. The example above used
 	// a lambda to wrap bswap. However, bswap itself is a function
 	// that fits the required signature. We can directly pass it to transform
 	// instead of using a lambda. The numbers after the function are the indices
 	// of the value which we want to transform
-	auto arr = std::get<numpy::ndarray>(val);
 	std::cout << "endianness transform during call to .transform(): ";
 	std::cout << arr.transform<c64>(bswap<c64>, 1, 1) << "\n";
-
 	// can also call apply() and transform each value in the array. Note that
 	// there are different variants of apply, which might be useful when working
 	// with structured arrays
@@ -169,24 +188,26 @@ example_simple_api(size_t padwidth = 30)
 	std::cout << "array after endianness was changed in-place during call to .apply():\n";
 	print_tensor<c64>(arr, "  ");
 	std::cout << "\n\n";
+	numpy::release(arr);
 
+	res = numpy::load("assets/in/structured.npy", arr);
+	std::cout << strpad("structured.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	numpy::release(arr);
 
-	val = numpy::load("assets/in/structured.npy");
-	std::cout << strpad("structured.npy:", padwidth) << std::holds_alternative<numpy::ndarray>(val) << "\n";
-
-
-	val = numpy::load("assets/in/multiple_named.npz");
-	std::cout << strpad("multiple_named.npz:", padwidth) << std::holds_alternative<numpy::npzfile>(val) << "\n";
+	numpy::npzfile npz;
+	res = numpy::loadz("assets/in/multiple_named.npz", npz);
+	std::cout << strpad("multiple_named.npz:", padwidth) << (res == numpy::result::ok) << "\n";
 
 	// try to load a file that does not exist. the variant will contain an
 	// numpy::result with the error code describing what happened.
-	val = numpy::load("assets/in/does_not_exist.npy");
-	if (std::holds_alternative<numpy::result>(val)) {
-		auto res = std::get<numpy::result>(val);
+	res = numpy::load("assets/in/does_not_exist.npy", arr);
+	if (res != numpy::result::ok) {
 		std::cout << strpad("does_not_exist.npy:", padwidth) << numpy::to_string(res) << "\n";
 	}
 	else
 		std::cout << strpad("does_not_exist.npy:", padwidth) << "surprisingly, file was found o_O\n";
+	numpy::release(arr);
+
 	std::cout << "\n";
 }
 
@@ -211,15 +232,26 @@ example_advanced_api(size_t padwidth = 30)
 	// re-using a npyfile
 	auto print_result = [padwidth, &npy](numpy::result res, std::string descr){
 		std::cout << strpad(descr, padwidth) << numpy::to_string(res) << "\n";
-		numpy::clear(npy);
+		numpy::release(npy);
 	};
 
 	print_result(numpy::from_npy("assets/in/simple.npy", arr, &npy), "simpletensor1.npy");
-	print_result(numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy), "simpletensor2.npy");
-	print_result(numpy::from_npy("assets/in/complex.npy", arr, &npy), "complex.npy");
-	print_result(numpy::from_npy("assets/in/structured.npy", arr, &npy), "structured.npy");
-	print_result(numpy::from_npz("assets/in/multiple_named.npz", npz), "multiple_named.npy");
+	numpy::release(arr);
+	numpy::release(npy);
 
+	print_result(numpy::from_npy("assets/in/simpletensor2.npy", arr, &npy), "simpletensor2.npy");
+	numpy::release(arr);
+	numpy::release(npy);
+
+	print_result(numpy::from_npy("assets/in/complex.npy", arr, &npy), "complex.npy");
+	numpy::release(arr);
+	numpy::release(npy);
+
+	print_result(numpy::from_npy("assets/in/structured.npy", arr, &npy), "structured.npy");
+	numpy::release(arr);
+	numpy::release(npy);
+
+	print_result(numpy::from_npz("assets/in/multiple_named.npz", npz), "multiple_named.npy");
 	/// accessing existing arrays
 	for (auto const& name: npz.names) {
 		auto shape = npz[name].shape();
@@ -235,11 +267,13 @@ example_advanced_api(size_t padwidth = 30)
 	catch (std::runtime_error &err) {
 		std::cerr << err.what();
 	}
+	numpy::release(npz);
 
 	// attempt to open a file that does not exist. should produce
 	// "error_file_not_found"
 	std::cout << "\n";
 	print_result(numpy::from_npz("assets/in/invalid.npz", npz), "invalid.npz");
+	numpy::release(npz);
 	std::cout << "\n";
 }
 
@@ -263,27 +297,29 @@ example_serialization(size_t padwidth = 30)
 	numpy::npyfile npy;
 	numpy::from_npy("assets/in/structured.npy", arr, &npy);
 	print_result(numpy::save("assets/out/structured.npy", arr, true), "structured.npy");
+	numpy::release(arr, npy);
 
 	std::cout << "\n";
 	std::cout << "Serialization examples: npz files\n";
 	std::cout << "---------------------------------\n";
 
 	// test npz -> load some of the files, and write them as npz.
-	numpy::ndarray arr0 = numpy::get_ndarray(numpy::load("assets/in/simple.npy"));
+	numpy::ndarray arr0;
+	numpy::load("assets/in/simple.npy", arr0);
 	print_result(numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true), "simple.npz");
+	numpy::release(arr0);
 
 	// load some data that is then written to npz files
-	numpy::variant_result val;
-	numpy::ndarray arr1 = numpy::get_ndarray(numpy::load("assets/in/simpletensor1.npy"));
-	numpy::ndarray arr2 = numpy::get_ndarray(numpy::load("assets/in/complex.npy"));
-
+	numpy::ndarray arr1, arr2;
+	numpy::load("assets/in/simpletensor1.npy", arr1);
+	numpy::load("assets/in/complex.npy", arr2);
 	// save the arrays with names
 	print_result(numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named.npy:");
 	print_result(numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named_compressed.npz:");
-
 	// save the arrays without names (creates arr_0, arr_1, ...)
 	print_result(numpy::savez("assets/out/savez_unnamed.npz", {arr1, arr2}, true), "save savez_unnamed.npz");
 	print_result(numpy::savez_compressed("assets/out/savez_unnamed_compressed.npz", {arr1, arr2}, true), "savez_unnamed_compressed.npz");
+	numpy::release(arr1, arr2);
 
 	std::cout << "\n";
 	std::cout << "hexdump comparison\n";
@@ -354,6 +390,7 @@ example_facade()
 	f64 value = 5.0;
 	value = value + arr(1, 2, 3);
 	std::cout << "\nvalue = " << value << "\n";
+	// numpy::release(arr);
 }
 
 
@@ -449,6 +486,8 @@ example_structured()
 			// don't forget to return (see definition of apply for details)
 			return student;
 		});
+
+	numpy::release(arr, npy);
 }
 
 
@@ -667,6 +706,8 @@ example_nested()
 		std::cout << record;
 	});
 	std::cout.copyfmt(old_state);
+
+	numpy::release(arr, npy);
 }
 
 
@@ -717,7 +758,7 @@ example_callbacks()
 			i64 value = *reinterpret_cast<i64*>(item.data());
 			auto multi_index = unravel_index(index, shape, order);
 			// use to_string's beg and end values to add space and :
-			std::cout << "Item " << index << to_string(multi_index, {.end="]: "}) << value << "\n";
+			std::cout << "Item " << index << ncr::to_string(multi_index, {.end="]: "}) << value << "\n";
 			sum += value;
 
 			// we return true to let the backend know that we want to have more
@@ -762,7 +803,7 @@ example_callbacks()
 		[&](u64_vector index, u64 value){
 			if (i++ >= max_count)
 				return false;
-			std::cout << "Item" << ncr::to_string(index, {.end="]: "}) << value << "\n";
+			std::cout << "Item" << ncr::to_string(index, {.end = "]: "}) << value << "\n";
 			sum += value;
 			return true;
 		})) != numpy::result::ok)
@@ -797,7 +838,7 @@ example_callbacks()
 		[&](u64_vector index, u64 value){
 			if (i++ >= max_count)
 				return false;
-			std::cout << "Item" << to_string(index, {.end="]: "}) << value << "\n";
+			std::cout << "Item" << ncr::to_string(index, {.end = "]: "}) << value << "\n";
 			sum += value;
 			return true;
 		})) != numpy::result::ok)
@@ -809,6 +850,90 @@ example_callbacks()
 	}
 }
 
+
+void
+example_readerng()
+{
+	{ // mmap stuff
+		numpy::npyreader<numpy::source_type::mmap> reader;
+		auto res = numpy::open("assets/in/simple.npy", reader);
+		std::cout << "open = " << to_string(res);
+		std::cout << ", eof = " << reader.source.eof();
+		std::cout << ", shape = " << to_string(reader.shape);
+
+		size_t i = 0;
+		std::cout << " ";
+		for (auto item: reader) {
+			i64 val;
+			std::memcpy(&val, item.data(), sizeof(i64));
+			if (i > 0) std::cout << ", ";
+			std::cout << val;
+			i += 1;
+		}
+		std::cout << ", count = " << i;
+
+		reader.seek(4);
+		i64 foo = reader.view<i64>();
+		std::cout << ", view-value = " << foo;
+
+		std::cout << "\n";
+
+		numpy::close(reader);
+	}
+
+	{ // fstream stuff
+		numpy::npyreader<numpy::source_type::fstream> reader;
+		auto res = numpy::open("assets/in/simple.npy", reader);
+		std::cout << "open = " << to_string(res);
+		std::cout << ", eof = " << reader.source.eof();
+		std::cout << ", shape = " << to_string(reader.shape);
+
+		size_t i = 0;
+		std::cout << " ";
+		// for (auto val: reader.as<i64>()) {
+		for (auto item: reader) {
+			i64 val;
+			std::memcpy(&val, item.data(), sizeof(i64));
+
+			if (i > 0) std::cout << ", ";
+			std::cout << val;
+			i += 1;
+		}
+		std::cout << ", count = " << i;
+		std::cout << "\n";
+
+		numpy::close(reader);
+	}
+
+	{ // buffered stuff
+		numpy::npyreader<numpy::source_type::buffered> reader;
+		auto res = numpy::open("assets/in/simple.npy", reader);
+		std::cout << "open = " << to_string(res);
+		std::cout << ", eof = " << reader.source.eof();
+		std::cout << ", shape = " << to_string(reader.shape);
+
+		size_t i = 0;
+		std::cout << " ";
+		for (auto val: reader.as<i64>()) {
+		//for (auto item: reader) {
+		//	i64 val;
+		//	std::memcpy(&val, item.data(), sizeof(i64));
+
+			if (i > 0) std::cout << ", ";
+			std::cout << val;
+			i += 1;
+		}
+		std::cout << ", count = " << i;
+
+		reader.seek(4);
+		i64 foo = reader.view<i64>();
+		std::cout << ", view-value = " << foo;
+
+		std::cout << "\n";
+
+		numpy::close(reader);
+	}
+}
 
 
 int
@@ -824,7 +949,8 @@ main()
 	example_facade();        std::cout << "\n";
 	example_structured();    std::cout << "\n";
 	example_nested();        std::cout << "\n";
-	example_callbacks();
+	example_callbacks();     std::cout << "\n";
+	example_readerng();
 
 	return 0;
 }
