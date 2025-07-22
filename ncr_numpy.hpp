@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.5.5
+#define NCR_NUMPY_VERSION 0.5.6
 
 #include <cstring>
 #include <cassert>
@@ -42,8 +42,6 @@
 #include <span>
 #include <cstdint>
 #include <complex>
-#include <stdfloat>
-#include <ranges>
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
