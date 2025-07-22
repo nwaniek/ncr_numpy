@@ -60,7 +60,6 @@
 #include <map>
 #include <unordered_set>
 #include <bit>
-#include <zip.h>
 
 /*
  * ncr/bswapdefs.hpp - definitions for bswap16, bswap32, and bswap64
@@ -6214,8 +6213,7 @@ close(npyreader<E>& reader)
 #ifndef _ff3beaed1e3b48528794e7d803a82757_
 #define _ff3beaed1e3b48528794e7d803a82757_
 
-// TODO: get rid of iostream
-
+#include <zip.h>
 
 
 namespace ncr { namespace zip {
@@ -6320,9 +6318,6 @@ libzip_open(backend_state *state, const std::filesystem::path filepath, filemode
 	if ((state->zip = zip_open(filepath.c_str(), flags, &err)) == nullptr) {
 		zip_error_t error;
 		zip_error_init_with_code(&error, err);
-
-		// TODO: set a local error string that is part of the zip interface
-		std::cerr << "cannot open zip archive " << filepath << ": " << zip_error_strerror(&error) << "\n";
 		return result::error_invalid_filepath;
 	}
 
