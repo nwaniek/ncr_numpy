@@ -1,7 +1,7 @@
 /*
  * example.cpp - examples for the usage of ncr_numpy
  *
- * SPDX-FileCopyrightText: 2023-2025 Nicolai Waniek <n@rochus.net>
+ * SPDX-FileCopyrightText: 2023-2024 Nicolai Waniek <n@rochus.net>
  * SPDX-License-Identifier: MIT
  * See LICENSE file for more details
  */
@@ -295,7 +295,7 @@ example_serialization(size_t padwidth = 30)
 
 	numpy::ndarray arr;
 	numpy::npyfile npy;
-	numpy::from_npy("assets/in/structured.npy", arr, &npy);
+	(void) numpy::from_npy("assets/in/structured.npy", arr, &npy);
 	print_result(numpy::save("assets/out/structured.npy", arr, true), "structured.npy");
 	numpy::release(arr, npy);
 
@@ -305,14 +305,14 @@ example_serialization(size_t padwidth = 30)
 
 	// test npz -> load some of the files, and write them as npz.
 	numpy::ndarray arr0;
-	numpy::load("assets/in/simple.npy", arr0);
+	(void) numpy::load("assets/in/simple.npy", arr0);
 	print_result(numpy::savez("assets/out/simple.npz", {{"simple_array", arr0}}, true), "simple.npz");
 	numpy::release(arr0);
 
 	// load some data that is then written to npz files
 	numpy::ndarray arr1, arr2;
-	numpy::load("assets/in/simpletensor1.npy", arr1);
-	numpy::load("assets/in/complex.npy", arr2);
+	(void) numpy::load("assets/in/simpletensor1.npy", arr1);
+	(void) numpy::load("assets/in/complex.npy", arr2);
 	// save the arrays with names
 	print_result(numpy::savez("assets/out/savez_named.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named.npy:");
 	print_result(numpy::savez_compressed("assets/out/savez_named_compressed.npz", {{"arr1", arr1}, {"arr2", arr2}}, true), "savez_named_compressed.npz:");
@@ -371,7 +371,7 @@ example_facade()
 	numpy::ndarray_t<f64> arr;
 	numpy::serialize_dtype(std::cout, arr.dtype()); std::cout << "\n";
 
-	numpy::from_npy("assets/in/simpletensor1.npy", arr);
+	(void) numpy::from_npy("assets/in/simpletensor1.npy", arr);
 	numpy::serialize_dtype(std::cout, arr.dtype()); std::cout << "\n";
 	std::cout << "shape: "; numpy::serialize_shape(std::cout, arr.shape()); std::cout << "\n";
 	std::cout << "\narray before changes\n"	;
@@ -463,7 +463,7 @@ example_structured()
 
 	numpy::ndarray arr;
 	numpy::npyfile npy;
-	numpy::from_npy("assets/in/structured.npy", arr, &npy);
+	(void) numpy::from_npy("assets/in/structured.npy", arr, &npy);
 
 	std::cout << arr.dtype() << "\n";
 	std::cout << "sizeof(student_t):  " << sizeof(student_t) << "\n";
@@ -602,7 +602,7 @@ example_nested()
 
 	numpy::ndarray arr;
 	numpy::npyfile npy;
-	numpy::from_npy("assets/in/nested.npy", arr, &npy);
+	(void) numpy::from_npy("assets/in/nested.npy", arr, &npy);
 
 	// make sure that the sizes correspond when using methods that cast (e.g.
 	// apply, value)! To achieve this, it might not be sufficient to simply have
@@ -872,13 +872,13 @@ example_readerng()
 		}
 		std::cout << ", count = " << i;
 
-		reader.seek(4);
+		(void) reader.seek(4);
 		i64 foo = reader.view<i64>();
 		std::cout << ", view-value = " << foo;
 
 		std::cout << "\n";
 
-		numpy::close(reader);
+		(void) numpy::close(reader);
 	}
 
 	{ // fstream stuff
@@ -902,7 +902,7 @@ example_readerng()
 		std::cout << ", count = " << i;
 		std::cout << "\n";
 
-		numpy::close(reader);
+		(void) numpy::close(reader);
 	}
 
 	{ // buffered stuff
@@ -925,13 +925,13 @@ example_readerng()
 		}
 		std::cout << ", count = " << i;
 
-		reader.seek(4);
+		(void) reader.seek(4);
 		i64 foo = reader.view<i64>();
 		std::cout << ", view-value = " << foo;
 
 		std::cout << "\n";
 
-		numpy::close(reader);
+		(void) numpy::close(reader);
 	}
 }
 

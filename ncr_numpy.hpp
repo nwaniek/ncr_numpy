@@ -7,7 +7,7 @@
  * that is required to work with numpy files.
  *
  * SPDX-License-Identifier: MIT
- * SPDX-FileCopyrightText: 2023-2025 Nicolai Waniek <n@rochus.net>
+ * SPDX-FileCopyrightText: 2023-2026 Nicolai Waniek <n@rochus.net>
  *
  * MIT License
  * 
@@ -30,36 +30,28 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.5.6
+#define NCR_NUMPY_VERSION 0.6.0
 
 #include <cstring>
 #include <cassert>
 #include <type_traits>
-#include <functional>
 #include <vector>
 #include <iostream>
 #include <iomanip>
 #include <span>
 #include <cstdint>
-#include <complex>
 #include <string>
 #include <sys/types.h>
-#include <unordered_map>
+#include <bit>
 #include <cstddef>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <optional>
 #include <algorithm>
 #include <memory>
+#include <charconv>
 #include <array>
 #include <sstream>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <map>
-#include <unordered_set>
-#include <bit>
 
 /*
  * ncr/bswapdefs.hpp - definitions for bswap16, bswap32, and bswap64
@@ -140,7 +132,7 @@
 #endif /* _ba6cf59bec5b4f2b92694c85e64f44cb_ */
 
 /*
- * ncr_types.hpp - basic types used in ncr
+ * types.hpp - basic types used in ncr
  *
  */
 #ifndef _909f868e37c64952a3871f2f678d0778_
@@ -151,6 +143,10 @@
 #endif
 
 
+#ifndef NCR_TYPES_DISABLE_COMPLEX
+	#include <complex>
+#endif
+
 #if __cplusplus >= 202302L
 	#include <stdfloat>
 #endif
@@ -160,7 +156,6 @@
 		#include <ranges>
 	#endif
 #endif
-
 
 using i8           = std::int8_t;
 using i16          = std::int16_t;
@@ -201,9 +196,12 @@ using real_t = float;
 using real_t = NCR_REAL_TYPE;
 #endif
 
+#ifndef NCR_TYPES_DISABLE_COMPLEX
+#define NCR_TYPES_HAS_COMPLEX
 using c64          = std::complex<f32>;
 using c128         = std::complex<f64>;
 using c256         = std::complex<f128>;
+#endif
 
 #ifndef NCR_TYPES_DISABLE_VECTORS
 #define NCR_TYPES_HAS_VECTORS
@@ -241,6 +239,17 @@ using u64_const_subrange = std::ranges::subrange<u64_const_iterator>;
 
 using u8_span = std::span<u8>;
 using u8_const_span = std::span<const u8>;
+
+
+// Compile-time invariants. We make assumptions about size and representation of
+// the basic types that are easy to break silently when porting. Catch them at
+// the include site instead of producing subtly wrong file output at runtime.
+static_assert(sizeof(u8)  == 1, "ncr expects sizeof(u8) == 1");
+static_assert(sizeof(u16) == 2, "ncr expects sizeof(u16) == 2");
+static_assert(sizeof(u32) == 4, "ncr expects sizeof(u32) == 4");
+static_assert(sizeof(u64) == 8, "ncr expects sizeof(u64) == 8");
+static_assert(sizeof(f32) == 4, "ncr expects sizeof(f32) == 4");
+static_assert(sizeof(f64) == 8, "ncr expects sizeof(f64) == 8");
 
 
 #endif /* _909f868e37c64952a3871f2f678d0778_ */
@@ -628,10 +637,11 @@ enum class byte_order {
 	big,
 	not_relevant,
 	invalid,
-	// TODO: determine if native = little is correct
-	native = little,
+	native = (std::endian::native == std::endian::little) ? little : big,
 };
-
+static_assert(std::endian::native == std::endian::little ||
+              std::endian::native == std::endian::big,
+              "ncr requires the host to be either little- or big-endian");
 
 inline char
 to_char(byte_order o)
@@ -812,43 +822,45 @@ stride_col_major(const std::vector<T> &shape, ssize_t k)
 }
 
 
-/*
- * compute_strides - compute the strides of an array of given shape and storage order
- */
-template <typename T = size_t, bool single_loop = true>
+template <typename T = size_t>
 void
-compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_order order = storage_order::row_major)
+compute_strides_single_loop(const std::vector<T> &shape, std::vector<T> &strides, storage_order order = storage_order::row_major)
 {
-	strides.resize(shape.size());
-
-	if constexpr (single_loop) {
-		T total = 1;
-		switch (order) {
-		case storage_order::row_major:
-			for (size_t i = shape.size(); i-- > 0; ) {
-				strides[i] = total;
-				total *= shape[i];
-			}
-			break;
-
-		case storage_order::col_major:
-			for (size_t i = 0; i < shape.size(); ++i) {
-				strides[i] = total;
-				total *= shape[i];
-			}
-			break;
-		}
-	}
-	else {
 		T (*fptr)(const std::vector<T> &shape, ssize_t) =
 			order == storage_order::row_major ?
 				&stride_row_major<T> :
 				&stride_col_major<T> ;
 		for (size_t k = 0; k < shape.size(); k++)
 			strides[k] = (*fptr)(shape, k);
-	}
+
 }
 
+/*
+ * compute_strides - compute the strides of an array of given shape and storage order
+ */
+template <typename T = size_t>
+void
+compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_order order = storage_order::row_major)
+{
+	strides.resize(shape.size());
+
+	T total = 1;
+	switch (order) {
+	case storage_order::row_major:
+		for (size_t i = shape.size(); i-- > 0; ) {
+			strides[i] = total;
+			total *= shape[i];
+		}
+		break;
+
+	case storage_order::col_major:
+		for (size_t i = 0; i < shape.size(); ++i) {
+			strides[i] = total;
+			total *= shape[i];
+		}
+		break;
+	}
+}
 
 
 } // ncr::
@@ -923,16 +935,11 @@ struct dtype
 	// structured arrays will contain fields, which are themselves dtypes.
 	//
 	// Note: We store them in a vector because we need to retain the insert
-	// order. We could also use a map instead, but then we would have to make
-	// sure that we somehow store the insert order.
+	// order. Field lookup by name is a linear scan over `fields`: for the
+	// shapes we actually see (a few to a few dozen fields) this is faster
+	// than a hash map and removes the dependency on <unordered_map>.
 	std::vector<dtype>
 		fields = {};
-
-	// map field names to indexes. while small structured arrays won't
-	// necessarily benefit from this, larger structured arrays might gain some
-	// speedup in getting values from fields.
-	std::unordered_map<std::string, size_t>
-		field_indexes  = {};
 };
 
 
@@ -947,10 +954,10 @@ inline
 const dtype*
 find_field(const dtype &dt, const std::string& field_name)
 {
-	auto it = dt.field_indexes.find(field_name);
-	if (it == dt.field_indexes.end())
-		return nullptr;
-	return &dt.fields[it->second];
+	for (const auto &f: dt.fields)
+		if (f.name == field_name)
+			return &f;
+	return nullptr;
 }
 
 
@@ -974,9 +981,7 @@ dtype&
 add_field(dtype &dt, T &&field)
 {
 	dt.fields.emplace_back(std::forward<T>(field));
-	dtype& result = dt.fields.back();
-	dt.field_indexes.insert({result.name, dt.fields.size() - 1});
-	return result;
+	return dt.fields.back();
 }
 
 
@@ -1072,9 +1077,15 @@ serialize_dtype_typestr(std::ostream &s, const dtype &dt)
 inline void
 serialize_shape(std::ostream &s, const u64_vector &shape)
 {
+	// follow Python's tuple repr: a trailing comma is only emitted for
+	// 1-element tuples (e.g. "(5,)"). Larger shapes get a regular tuple
+	// like "(2, 3)" without trailing comma.
 	s << "(";
-	for (auto size: shape)
-		s << size << ",";
+	for (size_t i = 0; i < shape.size(); ++i) {
+		if (i > 0) s << ", ";
+		s << shape[i];
+	}
+	if (shape.size() == 1) s << ",";
 	s << ")";
 }
 
@@ -1149,6 +1160,10 @@ operator<< (std::ostream &os, const dtype &dt)
 
 #endif /* _f7e9e094e0ba4453850c999f0e7f2a56_ */
 
+/*
+ * ncr/utility.hpp - utility definitions and functions
+ *
+ */
 #ifndef _65fc1481d8d149029547d3932c93f2e0_
 #define _65fc1481d8d149029547d3932c93f2e0_
 
@@ -1290,6 +1305,17 @@ template <typename T> constexpr size_t enum_count();
 	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
 
 /*
+ * like NCR_ENUM_CLASS, but tags the enum with [[nodiscard]] so the compiler
+ * warns when a return value is dropped. Use for error/result enums.
+ */
+#define NCR_NODISCARD_ENUM_CLASS(EnumName, UnderlyingType, ...) \
+	enum class [[nodiscard]] EnumName : UnderlyingType { \
+		__VA_ARGS__ \
+	}; \
+	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
+
+
+/*
  * A simple define to reduce the verbosity to declare a tuple. This is
  * particularly useful, for instance, in calls to random.hpp:random_coord.
  * In this example, the template accepts a variadic number of tuples, e.g.
@@ -1357,13 +1383,15 @@ to_underlying(E e) noexcept {
  * or not.
  */
 template <typename T>
-inline std::optional<size_t>
-get_index_of(std::vector<T*> vec, T *needle)
+inline bool
+get_index_of(std::vector<T*> vec, T *needle, size_t &out_index)
 {
 	for (size_t i = 0; i < vec.size(); i++)
-		if (vec[i] == needle)
-			return i;
-	return {};
+		if (vec[i] == needle) {
+			out_index = i;
+			return true;
+		}
+	return false;
 }
 
 
@@ -1497,7 +1525,7 @@ namespace ncr { namespace numpy {
 // need to bring enum_count into this namespace for the MACRO to work (TODO:
 // fix this)
 template <typename T> constexpr size_t enum_count();
-NCR_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
+NCR_NODISCARD_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
 
 NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
 
@@ -1509,15 +1537,20 @@ result_strings = {{
 	NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_STRINGIFY)
 }};
 
+// mask of all warning bits. New warnings should be added to bits below this
+// constant; the corresponding NCR_NUMPY_ERROR_CODE_LIST entries already
+// place the warnings at the lowest bits, so a single masking step
+// distinguishes warnings from real errors.
+inline constexpr u64 warning_mask =
+	to_underlying(result::warning_missing_descr)         |
+	to_underlying(result::warning_missing_fortran_order) |
+	to_underlying(result::warning_missing_shape);
+
 
 inline bool
 is_error(result r)
 {
-	return
-		r != result::ok &&
-		r != result::warning_missing_descr &&
-		r != result::warning_missing_shape &&
-		r != result::warning_missing_fortran_order;
+	return (to_underlying(r) & ~warning_mask) != 0;
 }
 
 
@@ -1537,18 +1570,26 @@ struct ErrorContext
  *
  *
  */
-
-
 #ifndef _69a274a94acf465aaa21a9e5046fa6ed_
 #define _69a274a94acf465aaa21a9e5046fa6ed_
 
 
-// mmap
+// mmap-based source is opt-out via NCR_NUMPY_DISABLE_MMAP. The default is to
+// have it enabled on POSIX-like systems (linux, *BSD, macOS). Disabling skips
+// the POSIX headers entirely, which is useful for freestanding/Windows builds
+// where these headers don't exist or aren't desired.
+#ifndef NCR_NUMPY_DISABLE_MMAP
+#define NCR_NUMPY_HAS_MMAP
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#endif
 
 
 
 namespace ncr { namespace numpy {
 
+#ifdef NCR_NUMPY_HAS_MMAP
 
 /*
  * mmap'ed file based buffer
@@ -1605,16 +1646,21 @@ close(mmap_buffer* buf)
 }
 
 
-inline void
+inline result
 release(mmap_buffer* buf)
 {
 	if (!buf)
-		return;
+		return result::error_invalid_data_pointer;
 
-	close(buf);
+	result res = close(buf);
+	if (is_error(res))
+		return res;
+
 	delete buf;
+	return result::ok;
 }
 
+#endif // NCR_NUMPY_HAS_MMAP
 
 
 /*
@@ -1622,8 +1668,9 @@ release(mmap_buffer* buf)
  */
 struct raw_buffer
 {
-	uint8_t* data;
-	size_t   size;
+	uint8_t* data        = nullptr;
+	size_t   size        = 0;
+	size_t   data_offset = 0;
 };
 
 
@@ -1655,6 +1702,7 @@ release(raw_buffer* buf)
 struct vector_buffer
 {
 	std::vector<uint8_t> data;
+	size_t               data_offset = 0;
 };
 
 
@@ -1712,7 +1760,9 @@ struct npybuffer
 	enum class type : uint8_t {
 		raw,
 		vector,
+#ifdef NCR_NUMPY_HAS_MMAP
 		mmap
+#endif
 	};
 
 	// tagged union
@@ -1725,23 +1775,26 @@ struct npybuffer
 
 	npybuffer(enum type _t) : type(_t) {}
 
-	// pointer to the actual array data
+	// pointer to the actual array data (with the data_offset applied, so this
+	// skips any header bytes that the backend buffer might still hold)
 	inline u8*
 	get_data_ptr()
 	{
 		switch (type) {
 		case type::raw:
-			return raw->data;
+			return raw->data + raw->data_offset;
 		case type::vector:
-			return vector->data.data();
+			return vector->data.data() + vector->data_offset;
+#ifdef NCR_NUMPY_HAS_MMAP
 		case type::mmap:
 			return mmap->data + mmap->data_offset;
+#endif
 		}
 		return nullptr;
 	}
 
-	// pointer to the actual data. this is the same as with get_data_ptr except
-	// for mmap buffers
+	// pointer to the start of the underlying buffer, ignoring data_offset.
+	// Useful for backends that need access to the raw, unsliced storage
 	inline u8*
 	get_raw_data_ptr()
 	{
@@ -1750,39 +1803,67 @@ struct npybuffer
 			return raw->data;
 		case type::vector:
 			return vector->data.data();
+#ifdef NCR_NUMPY_HAS_MMAP
 		case type::mmap:
 			return mmap->data;
+#endif
 		}
 		return nullptr;
 	}
 
+	// number of bytes available starting from get_data_ptr() (i.e. the size
+	// of the array payload, not the size of the underlying buffer)
 	size_t
 	get_data_size()
+	{
+		switch (type) {
+		case type::raw:
+			return raw->size - raw->data_offset;
+		case type::vector:
+			return vector->data.size() - vector->data_offset;
+#ifdef NCR_NUMPY_HAS_MMAP
+		case type::mmap:
+			return mmap->size - mmap->data_offset;
+#endif
+		}
+		return 0;
+	}
+
+	// number of bytes in total of this buffer, including header information
+	size_t
+	get_size()
 	{
 		switch (type) {
 		case type::raw:
 			return raw->size;
 		case type::vector:
 			return vector->data.size();
+#ifdef NCR_NUMPY_HAS_MMAP
 		case type::mmap:
 			return mmap->size;
+#endif
 		}
 		return 0;
 	}
 
-	void
+	// Returns the result of the underlying release() call. release() can
+	// fail (e.g. munmap returning EINVAL on a corrupted state); callers
+	// that don't care can drop the return value with `(void)buf.release()`,
+	// but the value is exposed so failure is observable.
+	result
 	release() {
 		switch (type) {
 		case type::raw:
-			ncr::numpy::release(raw);
-			break;
+			return ncr::numpy::release(raw);
 		case type::vector:
-			ncr::numpy::release(vector);
-			break;
+			return ncr::numpy::release(vector);
+#ifdef NCR_NUMPY_HAS_MMAP
 		case type::mmap:
-			ncr::numpy::release(mmap);
-			break;
+			return ncr::numpy::release(mmap);
+#endif
 		}
+		// TODO: maybe return something else?
+		return result::ok;
 	}
 };
 
@@ -2012,6 +2093,7 @@ ndarray_item::field(const ndarray_item &item, Args&&... args)
  * ndarray - basic ndarray without a lot of functionality
  *
  * TODO: documentation
+ * TODO: add option to tell the ndarray that it is not owning the buffer
  */
 struct ndarray
 {
@@ -2021,6 +2103,7 @@ struct ndarray
 	};
 
 	ndarray() {}
+	~ndarray() { _release_buffer(); }
 
 	// non-copyable
 	ndarray(const ndarray&) = delete;
@@ -2028,37 +2111,48 @@ struct ndarray
 
 	// move constructor
 	ndarray(ndarray&& other) noexcept
-	: _dtype(other._dtype)
-	, _shape(other._shape)
+	: _dtype(std::move(other._dtype))
+	, _shape(std::move(other._shape))
 	, _size(other._size)
 	, _order(other._order)
-	, _strides(other._strides)
+	, _strides(std::move(other._strides))
 	, _data_ptr(other._data_ptr)
 	, _data_size(other._data_size)
 	, _buffer(other._buffer)
 	{
-		// make sure other._bufptr is not pointing anywhere, or we'll end up
-		// releasing _bufptr too often
-		other._buffer = nullptr;
+		// leave the moved-from instance in a defensible state: no buffer
+		// ownership and no dangling pointers
+		other._buffer    = nullptr;
+		other._data_ptr  = nullptr;
+		other._data_size = 0;
+		other._size      = 0;
 	}
 
 	// move assignment
 	ndarray& operator=(ndarray&& other) noexcept
 	{
-		_dtype     = other._dtype;
-		_shape     = other._shape;
+		if (this == &other) return *this;
+
+		// release the buffer this instance currently owns, otherwise the
+		// pointer overwrite below would leak it
+		_release_buffer();
+
+		_dtype     = std::move(other._dtype);
+		_shape     = std::move(other._shape);
 		_size      = other._size;
 		_order     = other._order;
-		_strides   = other._strides;
+		_strides   = std::move(other._strides);
 		_data_ptr  = other._data_ptr;
 		_data_size = other._data_size;
 		_buffer    = other._buffer;
 
-		// make sure other._bufptr is not pointing anywhere, or we'll end up
-		// releasing _bufptr too often
-		other._buffer = nullptr;
+		other._buffer    = nullptr;
+		other._data_ptr  = nullptr;
+		other._data_size = 0;
+		other._size      = 0;
 
 		return *this;
+
 	}
 
 	// TODO: copy, which needs to explicitly be called and copy resources
@@ -2145,8 +2239,9 @@ struct ndarray
 	u8_span
 	get(Indexes... index)
 	{
-		// Number of indices must match number of dimensions
-		assert(_shape.size() == sizeof...(Indexes));
+		// Number of indices must match number of dimensions.
+		if (_shape.size() != sizeof...(Indexes))
+			throw std::out_of_range("ndarray::get: number of indices does not match array shape");
 
 		// test if indexes are out of bounds. we don't handle negative indexes
 		if (sizeof...(Indexes) > 0) {
@@ -2179,8 +2274,9 @@ struct ndarray
 	inline u8_span
 	get(u64_vector indexes)
 	{
-		// TODO: don't assert, throw exception
-		assert(indexes.size() == _shape.size());
+		if (indexes.size() != _shape.size())
+			throw std::out_of_range("ndarray::get: number of indices does not match array shape");
+
 		if (indexes.size() > 0) {
 			size_t offset = 0;
 			for (size_t i = 0; i < indexes.size(); i++) {
@@ -2281,7 +2377,7 @@ struct ndarray
 	 * This is useful, for instance, when the data stored in the array is not in
 	 * the same storage_order as the system that is using the data.
 	 */
-	template <typename T, typename Func = std::function<T (T)>, typename... Indexes>
+	template <typename T, typename Func, typename... Indexes>
 	inline T
 	transform(Func func, Indexes... index)
 	{
@@ -2302,7 +2398,7 @@ struct ndarray
 	 * TODO: provide an apply function which also passes the element index back
 	 * to the transformation function
 	 */
-	template <typename Func = std::function<u8_vector (u8_span)>>
+	template <typename Func>
 	inline void
 	apply(Func func)
 	{
@@ -2326,7 +2422,7 @@ struct ndarray
 	 * call transform<i32>(...) on an array that stores values of types with
 	 * different size, e.g. i16 or i64.
 	 */
-	template <typename T, typename Func = std::function<T (T)>>
+	template <typename T, typename Func>
 	inline void
 	apply(Func func)
 	{
@@ -2350,7 +2446,7 @@ struct ndarray
 	 * the flat-index of the item, which can be used on the caller-side to get
 	 * the multi-index (via ndarray::unravel).
 	 */
-	template <typename Func = std::function<void (const ndarray_item&, size_t)>>
+	template <typename Func>
 	inline void
 	map(Func func)
 	{
@@ -2585,7 +2681,11 @@ private:
 	_release_buffer()
 	{
 		if (_buffer) {
-			_buffer->release();
+			// best-effort tear-down: the buffer may have been swapped out
+			// (move) and the underlying release() can technically fail (e.g.
+			// munmap on a damaged mapping), but we cannot do anything useful
+			// in a destructor path -> Cast to void to make the intent explicit.
+			(void) _buffer->release();
 			delete _buffer;
 			_buffer = nullptr;
 		}
@@ -2693,7 +2793,7 @@ release(ndarray_t<T> &arr)
  * Explicit interface, commonly a user does not need to use this function
  * directly
  */
-template <typename T, typename Func = std::function<T (T)>>
+template <typename T, typename Func>
 void
 print_tensor(std::ostream &os, ndarray &arr, std::string indent, u64_vector &indexes, size_t dim, Func transform)
 {
@@ -2738,9 +2838,21 @@ print_tensor(std::ostream &os, ndarray &arr, std::string indent, u64_vector &ind
 /*
  * print_tensor - print an ndarray to an ostream
  */
-template <typename T, typename Func = std::function<T (T)>>
+// default identity-transform overload
+template <typename T>
 void
-print_tensor(ndarray &arr, std::string indent="", Func transform = [](T v){ return v; }, std::ostream &os = std::cout)
+print_tensor(ndarray &arr, std::string indent="", std::ostream &os = std::cout)
+{
+	auto shape = arr.shape();
+	auto dims  = shape.size();
+	u64_vector indexes(dims);
+	print_tensor<T>(os, arr, indent, indexes, 0, [](T v){ return v; });
+}
+
+// caller-supplied transform overload
+template <typename T, typename Func>
+void
+print_tensor(ndarray &arr, std::string indent, Func transform, std::ostream &os = std::cout)
 {
 	auto shape = arr.shape();
 	auto dims  = shape.size();
@@ -2817,7 +2929,7 @@ void print_tensor(ndarray_t<T> &arr, std::string indent="")
 #endif /* _719685da6c474222b60a9d28795719db_ */
 
 /*
- * string_conversions.hpp - collection of functions to convert types to strings
+ * strconv.hpp - collection of functions to convert types to strings
  *
  */
 
@@ -2890,7 +3002,7 @@ std::string to_string(const T (&arr)[N], const strfmtopts& opts = {})
 #endif /* _f53b5d05a7dd47668fbad51a033a87b7_ */
 
 /*
- * pyparser - a simple parser for python data
+ * pyparser.hpp - a simple parser for python data
  *
  */
 
@@ -2918,15 +3030,13 @@ equals(u8_const_iterator first, u8_const_iterator last, const std::string_view &
 }
 
 inline bool
-equals(u8* first, u8* last, const std::string_view &str)
-{
-	return equals(u8_const_span(&*first, std::distance(first, last)), str);
-}
-
-inline bool
 equals(const u8* first, const u8* last, const std::string_view &str)
 {
-	return equals(u8_const_span(&*first, std::distance(first, last)), str);
+	if (!first || !last)
+		return false;
+	assert(last >= first);
+
+	return equals(u8_const_span(first, static_cast<size_t>(last - first)), str);
 }
 
 // basic types
@@ -3017,35 +3127,29 @@ get_punctuation_type(u8 sym, TokenType &t)
 }
 
 
-// determine if a string is an integer number or not.
-// TODO: maybe adapt std::from_chars, as this might circumvent using an
-// std::string, or maybe parse the numbers manually.
-// TODO: also allow users to have the ability to use
-// boost::lexical_cast. But I don't see why we should pull in anything
-// from boost for one or two lines of code.
+// determine if [first, last) parses as an integer literal. Uses std::from_chars
+// instead of a byte range to avoid the per-token std::string allocation
+// that std::strtol/std::strtod would require.
 inline bool
-is_integer_literal(std::string str, u64 &value)
+is_integer_literal(const u8* first, const u8* last, u64 &value)
 {
-	char *end;
-	value = std::strtol(str.c_str(), &end, 10);
-	return *end == '\0';
+	const char *b = reinterpret_cast<const char*>(first);
+	const char *e = reinterpret_cast<const char*>(last);
+	auto [ptr, ec] = std::from_chars(b, e, value);
+	return ec == std::errc{} && ptr == e;
 }
 
 
-// determine if a string is a floating point number or not.
-// TODO: maybe adapt std::from_chars, as this might circumvent using an
-// std::string, or maybe parse the numbers manually
-// TODO: also allow users to have the ability to use
-// boost::lexical_cast. But I don't see why we should pull in anything
-// from boost for one or two lines of code.
+// determine if [first, last) parses as a floating-point literal. As above,
+// avoids constructing a transient std::string for std::strtod by using
+// std::from_chars.
 inline bool
-is_float_literal(std::string str, double &value)
+is_float_literal(const u8* first, const u8* last, double &value)
 {
-	// TODO: maybe adapt std::from_chars, as this might circumvent using an
-	// std::string. However, from_chars for float will be only in C++23
-	char *end;
-	value = std::strtod(str.c_str(), &end);
-	return *end == '\0';
+	const char *b = reinterpret_cast<const char*>(first);
+	const char *e = reinterpret_cast<const char*>(last);
+	auto [ptr, ec] = std::from_chars(b, e, value);
+	return ec == std::errc{} && ptr == e;
 }
 
 
@@ -3096,12 +3200,16 @@ struct Token
 	// (converted) value. In case of numerical values, this is a byproduct of
 	// testing for numerical values. In case of single symbols, it can make
 	// access a bit faster than going through the iterator
+	//
+	// Default-initialize to 0 so tokens whose ttype does not carry a value
+	// (e.g. brackets, the value separator) don't leave indeterminate bytes
+	// behind in the buffered tokens vector.
 	union {
 		u8   sym;
 		u64  l;
 		f64  d;
 		bool b;
-	} value;
+	} value = {};
 };
 
 
@@ -3390,6 +3498,12 @@ struct Tokenizer
 			u8 str_delim = *tok_start;
 			tok_end = tok_start;
 			while (++tok_end != data_end) {
+				// skip escaped character
+				if (*tok_end == '\\') {
+					if (tok_end+1 != data_end)
+						++tok_end;
+					continue;
+				}
 				if (*tok_end == str_delim)
 					break;
 			}
@@ -3417,17 +3531,13 @@ struct Tokenizer
 			tok.begin = tok_start;
 			tok.end   = tok_end;
 
-			// TODO: avoid using a temporary string, and use something that
-			// actually uses system locales to determine numbers based on a
-			// locale's decimal point settings
-			std::string tmp(tok.begin, tok.end);
-			if (is_integer_literal(tmp, tok.value.l))
+			if (is_integer_literal(tok.begin, tok.end, tok.value.l))
 				tok.ttype = TokenType::IntegerLiteral;
-			else if (is_float_literal(tmp, tok.value.d))
+			else if (is_float_literal(tok.begin, tok.end, tok.value.d))
 				tok.ttype = TokenType::FloatLiteral;
 			else if (is_bool_literal(tok.begin, tok.end, tok.value.b))
 				tok.ttype = TokenType::BoolLiteral;
-			else if (equals(u8_const_span(tok.begin, std::distance(tok.begin, tok.end)), "None"))
+			else if (equals(u8_const_span(tok.begin, static_cast<size_t>(tok.end - tok.begin)), "None"))
 				tok.ttype = TokenType::NoneLiteral;
 			else
 				// we could not determine this type.
@@ -3476,6 +3586,48 @@ struct Tokenizer
 		}
 
 		return Tokenizer::result::end_of_input;
+	}
+
+
+	/*
+	 * peek at the next token without actually moving the buffer position
+	 */
+	bool
+	peek_token(Token &tok)
+	{
+		// buffer already filled with the next token?
+		if (buffer_pos < buffer.size()) {
+			tok = buffer[buffer_pos];
+			return true;
+		}
+
+		// not the case, so we need to fetch and immediately reset buffer
+		// position.
+		// NOTE: could also have used the restore point mechanism instead
+		size_t saved = buffer_pos;
+		Token tmp;
+		if (get_next_token(tmp) == result::ok) {
+			tok = tmp;
+			buffer_pos = saved;
+			return true;
+		}
+
+		// could not read, so go back
+		buffer_pos = saved;
+		return false;
+	}
+
+
+	/*
+	 * peek the type of the next token
+	 */
+	TokenType
+	peek_type()
+	{
+		Token tok;
+		if (peek_token(tok))
+			return tok.ttype;
+		return TokenType::Unknown;
 	}
 
 	// backup points to memoize where the
@@ -3982,7 +4134,7 @@ struct PyParser
 #endif /* _f03a19a69cac46f38404d117df9d9c37_ */
 
 /*
- * ncr_bits.hpp - bit operations
+ * bits.hpp - bit operations
  *
  */
 #ifndef _6029ff7cb97c498f8a26966c49a873fe_
@@ -4070,6 +4222,8 @@ f64 bswap<f64>(f64 val)
 }
 
 
+#ifdef NCR_TYPES_HAS_COMPLEX
+
 template <> inline
 std::complex<f32> bswap<std::complex<f32>>(std::complex<f32> val)
 {
@@ -4087,15 +4241,26 @@ std::complex<f64> bswap<std::complex<f64>>(std::complex<f64> val)
 	return std::complex<f64>(std::bit_cast<f64, u64>(ureal), std::bit_cast<f64, u64>(uimag));
 }
 
+#endif
+
+
+/*
+ * unsigned_or_unsigned_enum - matches plain unsigned integer types and
+ * enum types whose underlying type is unsigned. Centralises the long
+ * requires-clause that all bit/flag helpers below shared.
+ */
+template <typename T>
+concept unsigned_or_unsigned_enum =
+	std::unsigned_integral<T> ||
+	std::unsigned_integral<typename std::underlying_type<T>::type>;
+
 
 /*
  * flag_is_set - test if a flag is set in an unsigned value.
  *
  * This function evaluates if a certain flag, i.e. bit pattern, is present in v.
  */
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline bool
 flag_is_set(const T v, const U flag)
 {
@@ -4103,9 +4268,7 @@ flag_is_set(const T v, const U flag)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 set_flag(const T v, const U flag)
 {
@@ -4113,9 +4276,7 @@ set_flag(const T v, const U flag)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 clear_flag(const T v, const U flag)
 {
@@ -4123,9 +4284,7 @@ clear_flag(const T v, const U flag)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 toggle_flag(const T v, const U flag)
 {
@@ -4136,8 +4295,7 @@ toggle_flag(const T v, const U flag)
 /*
  * bitmask - create bitmask of given length at offset
  */
-template <typename U>
-requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+template <unsigned_or_unsigned_enum U>
 constexpr U
 bitmask(U offset, U length)
 {
@@ -4147,8 +4305,7 @@ bitmask(U offset, U length)
 }
 
 
-template <typename U>
-requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+template <unsigned_or_unsigned_enum U>
 inline U
 set_bits(U dest, U offset, U length, U bits)
 {
@@ -4157,8 +4314,7 @@ set_bits(U dest, U offset, U length, U bits)
 }
 
 
-template <typename U>
-requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+template <unsigned_or_unsigned_enum U>
 inline U
 get_bits(U src, U offset, U length)
 {
@@ -4166,8 +4322,7 @@ get_bits(U src, U offset, U length)
 }
 
 
-template <typename U>
-requires std::unsigned_integral<U> || std::unsigned_integral<typename std::underlying_type<U>::type>
+template <unsigned_or_unsigned_enum U>
 inline U
 toggle_bits(U src, U offset, U length)
 {
@@ -4181,9 +4336,7 @@ toggle_bits(U src, U offset, U length)
  *
  * This function evaluates if the Nth bit is present in variable v.
  */
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline bool
 bit_is_set(const T v, const U N)
 {
@@ -4191,9 +4344,7 @@ bit_is_set(const T v, const U N)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 set_bit(const T v, const U N)
 {
@@ -4201,9 +4352,7 @@ set_bit(const T v, const U N)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 clear_bit(const T v, const U N)
 {
@@ -4211,9 +4360,7 @@ clear_bit(const T v, const U N)
 }
 
 
-template <typename T, typename U>
-requires (std::unsigned_integral<T> && std::unsigned_integral<U>) ||
-		 (std::unsigned_integral<typename std::underlying_type<T>::type> && std::unsigned_integral<typename std::underlying_type<U>::type>)
+template <unsigned_or_unsigned_enum T, unsigned_or_unsigned_enum U>
 inline T
 toggle_bit(const T v, const U N)
 {
@@ -4225,7 +4372,7 @@ toggle_bit(const T v, const U N)
 #endif /* _6029ff7cb97c498f8a26966c49a873fe_ */
 
 /*
- * ncr_zip - zip backend interface declaration
+ * zip - zip backend interface declaration
  *
  */
 #ifndef _8d2a79e5218b40e3807880febfa294a0_
@@ -4300,17 +4447,49 @@ namespace zip {
 	struct backend_state;
 
 	// common interface for any zip backend
+	//
+	// Lifecycle contract for implementors:
+	//
+	//   make(&state)          -> allocates a fresh backend_state. The
+	//                            pointer the caller passes in must be
+	//                            null; callers should set it to nullptr
+	//                            before calling. On success *state is
+	//                            non-null and owns its resources.
+	//   open(state, p, mode)  -> binds the state to the file at `p`. May
+	//                            be called only on an opened-but-empty
+	//                            state (i.e. after make() and before any
+	//                            other call). The backend_state must
+	//                            survive until close().
+	//   close(state)          -> closes the file but leaves the state
+	//                            usable for another open(). Idempotent.
+	//   release(&state)       -> frees the backend_state (deletes the
+	//                            object, sets *state = nullptr). After
+	//                            release the pointer the caller still
+	//                            holds is invalid.
+	//   write(...)            -> the backend takes *ownership* of the
+	//                            buffer (it is moved in). Some backends
+	//                            (libzip in particular) defer the actual
+	//                            compression to close(), so the buffer
+	//                            *must* live until the backend itself is
+	//                            closed; callers must therefore not
+	//                            reuse, read, or otherwise touch the
+	//                            moved-from buffer after the call.
+	//   read(...)             -> the backend resizes `buffer` and writes
+	//                            the decompressed file content into it.
+	//                            Ownership of the buffer stays with the
+	//                            caller.
 	struct backend_interface {
-		// create a backend state
+		// create a backend state. *state must be null on entry.
 		result (*make)(backend_state **);
 
-		// release a backend pointer.
+		// free a backend state. *state is set to nullptr on success.
 		result (*release)(backend_state **);
 
-		// open an archive
+		// open an archive on disk. The state must have been created via
+		// make() and not currently be associated with another file.
 		result (*open)(backend_state *, const std::filesystem::path filepath, filemode mode);
 
-		// close an archive
+		// close an archive. Idempotent. The state remains usable.
 		result (*close)(backend_state *);
 
 		// return the list of files contained within an archive
@@ -4318,7 +4497,9 @@ namespace zip {
 
 		// read a given filename from an archive. Note that the filename relates to
 		// a file within the archive, not on the local filesystem. The
-		// decompressed/read file should be stored in `buffer'.
+		// decompressed/read file is written into `buffer`, which the
+		// backend resizes as needed. Ownership of the buffer stays with
+		// the caller.
 		result (*read)(backend_state *, const std::string filename, u8_vector &buffer);
 
 		// write a buffer to an already opened zip archive. the compression level
@@ -4327,12 +4508,14 @@ namespace zip {
 		// from 1 to 9, with 1 being the fastest (but weakest) compression and 9 the
 		// slowest (but strongest).
 		//
-		// Note: the backend implementation will take ownership of the buffer. that
-		// is, the buffer will be moved to the function. The reason is that
-		// (currently) the buffer is created locally and its livetime might be
-		// shorter than what the backend requires. With transfer of ownership, the
-		// backend can make sure that the buffer survives as long as required. For
-		// an example of this behavior, see ncr_zip_impl_libzip.hpp
+		// Ownership: the backend implementation takes ownership of the
+		// buffer. Some backends (e.g. libzip via zip_source_buffer) only
+		// read the data when the archive is actually closed, so the
+		// buffer's storage *must* outlive the call to write(). Concretely,
+		// it must remain valid until close() and release() have run. The
+		// reference libzip backend handles this by stashing the moved-in
+		// buffer inside backend_state::write_buffers; alternative backends
+		// must provide an equivalent guarantee.
 		result (*write)(backend_state *, const std::string filename, u8_vector &&buffer, bool compress, u32 compression_level);
 	};
 
@@ -4349,7 +4532,7 @@ namespace zip {
 #define _9750a253a01642ea81d4721d4c92ad7c_
 
 /*
- * npy - read/write numpy files
+ * npyfile - read/write numpy files
  *
  */
 
@@ -4357,6 +4540,8 @@ namespace zip {
 
 
 
+// NOTE: npybuffers.hpp includes fcntl.h, unistd.h, and sys/mman.h in case MMAP
+// is not disabled. no need to include this here as well
 
 
 namespace ncr { namespace numpy {
@@ -4372,6 +4557,11 @@ enum class source_type: u16;
 
 /*
  * concepts
+ *
+ * The concepts here describe the *callback* shapes that the from_npy reader
+ * family accepts. They drive `if constexpr` dispatch in from_npy_callback and
+ * document what user-supplied lambdas must look like.
+ *
  */
 template <typename T>
 concept NDArray = std::derived_from<T, ndarray>;
@@ -4397,23 +4587,6 @@ concept TypedReaderCallback = TypedReaderCallbackFlat<T, F> || TypedReaderCallba
 template <typename F>
 concept ArrayPropertiesCallback = requires(F f, const dtype &dt, const u64_vector &shape, const storage_order &order) {
 	{ f(dt, shape, order) } -> std::same_as<bool>;
-};
-
-template <typename Range, typename Tp>
-concept Writable = requires(Range r, Tp value) {
-	// ensure writable to the iterator
-	{ *std::begin(r) = value };
-	// ensure there's and end iterator
-	{ std::end(r) };
-	// ensure its a valid range
-	{ std::begin(r) != std::end(r) };
-};
-
-template <typename T, typename OutputRange>
-concept Readable = requires(T source, OutputRange &&dest, std::size_t size) {
-	{ source.read(dest, size) } -> std::same_as<std::size_t>;
-	{ source.eof() } -> std::same_as<bool>;
-	// TODO: maybe also fail()
 };
 
 template <typename T>
@@ -4510,24 +4683,36 @@ release(npyfile &npy)
  */
 struct npzfile
 {
-	// operator[] is mapped to the array, because this is what people expect
-	// from using numpy
-	ndarray& operator[](std::string name)
-	{
-		auto where = arrays.find(name);
-		if (where == arrays.end())
-			throw std::runtime_error(std::string("Key error: No array with name \"") + name + std::string("\""));
-		return *where->second.get();
-	}
-
-	// the names of all arrays in this file
+	// the names of all arrays in this file (insertion order)
 	std::vector<std::string> names;
 
-	// the npy files associated with each name
-	std::map<std::string, std::unique_ptr<npyfile>> npys;
+	// owning storage for the npy files and arrays. Both vectors are kept in
+	// sync with `names` (same length, same order). A linear scan over names
+	// is the lookup mechanism. For the small number of arrays in a typical
+	// .npz file this is faster than std::map and avoids the dependency on
+	// <map>.
+	std::vector<std::unique_ptr<npyfile>> npys;
+	std::vector<std::unique_ptr<ndarray>> arrays;
 
-	// the actual array associated with each name
-	std::map<std::string, std::unique_ptr<ndarray>> arrays;
+	// look up an array by name. Returns a pointer to the owned ndarray, or
+	// nullptr when no such array exists.
+	ndarray* find(const std::string &name)
+	{
+		for (size_t i = 0; i < names.size(); ++i)
+			if (names[i] == name)
+				return arrays[i].get();
+		return nullptr;
+	}
+
+	// operator[] is mapped to the array, because this is what people expect
+	// from using numpy
+	ndarray& operator[](const std::string &name)
+	{
+		ndarray *a = find(name);
+		if (!a)
+			throw std::runtime_error(std::string("Key error: No array with name \"") + name + std::string("\""));
+		return *a;
+	}
 };
 
 
@@ -4536,7 +4721,8 @@ inline void
 release(npzfile &npz)
 {
 	for (auto &arr: npz.arrays)
-		arr.second->release();
+		if (arr)
+			arr->release();
 
 	npz.names.clear();
 	npz.npys.clear();
@@ -4582,18 +4768,27 @@ struct buffer_reader
 {
 	buffer_reader(u8_vector &data) : _data(data), _pos(0) {}
 
-	template <Writable<u8> D>
+	template <typename D>
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
 		auto first = std::begin(dest);
-        auto last = std::end(dest);
-        size = std::min(size, static_cast<std::size_t>(std::distance(first, last)));
-		size = (_pos + size > _data.size()) ? _data.size() - _pos : size;
+		auto last  = std::end(dest);
+		size_t dest_capacity = static_cast<size_t>(last - first);
+		if (size > dest_capacity)
+			size = dest_capacity;
+		// note the subtraction is guarded by the comparison below. It never
+		// underflows even when _pos > _data.size() (which can't happen
+		// through the public API, but defensive readers shouldn't compute
+		// huge sizes by accident)
+		size_t available = (_pos < _data.size()) ? _data.size() - _pos : 0;
+		if (size > available)
+			size = available;
 		std::copy_n(_data.begin() + _pos, size, first);
 		_pos += size;
 		return size;
 	}
+
 
 	template <typename T>
 	requires std::same_as<T, u8>
@@ -4608,7 +4803,7 @@ struct buffer_reader
 		return _pos >= _data.size();
 	}
 
-	u8_vector   _data;
+	u8_vector   &_data;
 	std::size_t _pos;
 };
 
@@ -4620,7 +4815,7 @@ struct ifstream_reader
 {
 	ifstream_reader(std::ifstream &stream) : _stream(stream), _eof(false), _fail(false) {}
 
-	template <Writable<u8> D>
+	template <typename D>
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
@@ -4660,9 +4855,12 @@ struct ifstream_reader
 
 /*
  * read_magic_string - read (and validate) the magic string from a ReadableSource
+ *
+ * The reader is expected to provide `read(buf, size) -> size_t`. Note that this
+ * doesn't use a concept. It did before, but didn't catch any bug while adding
+ * compile time noise.
  */
 template <typename Reader>
-requires Readable<Reader, decltype(npyfile::magic)>
 result
 read_magic_string(Reader &source, npyfile &npy)
 {
@@ -4681,7 +4879,6 @@ read_magic_string(Reader &source, npyfile &npy)
  * read_version - read (and validate) the version from a ReadableSource
  */
 template <typename Reader>
-requires Readable<Reader, decltype(npyfile::version)>
 result
 read_version(Reader &source, npyfile &npy)
 {
@@ -4706,7 +4903,6 @@ read_version(Reader &source, npyfile &npy)
  * read_header_length - read (and validate) the header length from a ReadableSource
  */
 template <typename Reader>
-requires Readable<Reader, u8*>
 result
 read_header_length(Reader &source, npyfile &npy)
 {
@@ -4745,7 +4941,6 @@ read_header_length(Reader &source, npyfile &npy)
  * read_header - read the header from a ReadableSource
  */
 template <typename Reader>
-requires Readable<Reader, decltype(npyfile::header)>
 result
 read_header(Reader &source, npyfile &npy)
 {
@@ -4775,13 +4970,12 @@ parse_descr_string(PyParser::ParseResult *descr, dtype &dt)
 	dt.endianness = to_byte_order(descr->begin[0]);
 	// second character is the type code
 	dt.type_code  = descr->begin[1];
-	// remaining characters are the byte size of the data type
-	std::string str(descr->begin + 2, descr->end);
-
-	// TODO: use something else than strtol
-	char *end;
-	dt.size = std::strtol(str.c_str(), &end, 10);
-	if (*end != '\0') {
+	// remaining characters are the byte size of the data type. parse via
+	// from_chars so we don't need a transient std::string
+	const char *b = reinterpret_cast<const char*>(descr->begin + 2);
+	const char *e = reinterpret_cast<const char*>(descr->end);
+	auto [ptr, ec] = std::from_chars(b, e, dt.size);
+	if (ec != std::errc{} || ptr != e) {
 		dt.size = 0;
 		return result::error_descr_invalid_data_size;
 	}
@@ -5103,13 +5297,13 @@ from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 	auto source = buffer_reader(buffer);
 	if ((res = process_file_header(source, npy, dt, shape, order), is_error(res))) return res;
 
-	// erase the entire header block. what's left is the raw data of the ndarray
-	buffer.erase(buffer.begin(), buffer.begin() + npy.data_offset);
-
 	// create a new npybuffer with a vector backend. we can move the data right
-	// into it
+	// into it. the npy header bytes still sit at the start of the buffer,
+	// marking them with data_offset so the array data starts after them.
+	// this avoids an O(N) erase of the entire payload
 	npybuffer* npybuf = new npybuffer(npybuffer::type::vector);
 	npybuf->vector    = make_vector_buffer(std::move(buffer));
+	npybuf->vector->data_offset = npy.data_offset;
 
 	// build the ndarray from the data that we read by moving into it. we also
 	// transfer ownership of the npybuf to the array. the user is responsible to
@@ -5171,9 +5365,13 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		// remove ".npy" from array name
 		std::string array_name = fname.substr(0, fname.find_last_of("."));
 
-		// get a npy file and array
-		npyfile *npy = new npyfile{};
-		ndarray *array = new ndarray{};
+		// get a npy file and array. construct owning pointers up-front so that
+		// any subsequent error path automatically releases them.
+		// TODO: rethink if we want to have a unique pointer here or not. For
+		// now it's the least effort variant in resource managing things in the
+		// npz struct
+		auto npy   = std::make_unique<npyfile>();
+		auto array = std::make_unique<ndarray>();
 		result res;
 		if ((res = from_buffer(std::move(buffer), *npy, *array)) != result::ok) {
 			zip_backend.close(zip_state);
@@ -5181,10 +5379,12 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 			return res;
 		}
 
-		// store the information in an npz_file
-		npz.names.push_back(array_name);
-		npz.npys.insert(std::make_pair(array_name, std::unique_ptr<npyfile>(npy)));
-		npz.arrays.insert(std::make_pair(array_name, std::unique_ptr<ndarray>(array)));
+		// store the information in an npz_file. names/npys/arrays are kept
+		// index-aligned so a single name lookup picks both the npy and the
+		// array.
+		npz.names.push_back(std::move(array_name));
+		npz.npys.push_back(std::move(npy));
+		npz.arrays.push_back(std::move(array));
 	}
 
 	// close the zip backend and release it again
@@ -5276,7 +5476,7 @@ get_file_size(std::ifstream &is)
 /*
  * from_npy_ifstream - read an already opened ifstream into an ndarray
  */
-template <NDArray NDArrayType, bool unsafe_read = true>
+template <typename NDArrayType, bool unsafe_read = true>
 result
 from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullptr)
 {
@@ -5288,8 +5488,11 @@ from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullpt
 	// is reasonably simple
 	auto filesize = get_file_size(file);
 	u8_vector buf(filesize);
-	if constexpr (unsafe_read)
+	if constexpr (unsafe_read) {
 		file.read(reinterpret_cast<char*>(buf.data()), filesize);
+		if (file.bad() || static_cast<u64>(file.gcount()) != filesize)
+			return result::error_file_read_failed;
+	}
 	else
 		buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 
@@ -5313,10 +5516,13 @@ from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullpt
  * When reading a file into an ndarray, we read the file in one go into a buffer
  * and then process it.
  */
-template <NDArray NDArrayType, bool unsafe_read = true>
+template <typename NDArrayType, bool unsafe_read = true>
 result
 from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = nullptr)
 {
+	static_assert(std::is_base_of_v<ndarray, NDArrayType>,
+				  "NDArrayType must derive from ncr::numpy::ndarray");
+
 	// try to open the file
 	result res = result::ok;
 	std::ifstream file;
@@ -5352,9 +5558,15 @@ from_npy_callback(std::filesystem::path filepath, G array_properties_callback, F
 	}
 
 	// at this point we know the item size, and can read items from the file
-	// until we hit eof
+	// until we hit eof. Hoist the buffer allocation out of the loop: for
+	// typed callbacks it's reused as-is, while the generic callback variant takes
+	// ownership via std::move and we reallocate next iteration.
+	u8_vector buffer(dt.item_size, 0);
 	for (u64 i = 0;; ++i) {
-		u8_vector buffer(dt.item_size, 0);
+		if constexpr (GenericReaderCallback<F>) {
+			if (buffer.size() != dt.item_size)
+				buffer.assign(dt.item_size, 0);
+		}
 		size_t bytes_read = source.read(buffer, dt.item_size);
 		if (bytes_read != dt.item_size) {
 			// EOF -> nothing more to read, w'ere in a good state
@@ -5573,12 +5785,14 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 {
 	namespace fs = std::filesystem;
 
-	// detect if there are any name clashes
-	std::unordered_set<std::string> _set;
-	for (auto &arg: args) {
-		if (_set.contains(arg.name))
-			return result::error_duplicate_array_name;
-		_set.insert(arg.name);
+	// detect if there are any name clashes. argument lists for savez are
+	// short (typically a handful of arrays), so a quadratic scan is faster
+	// than building an unordered_set and avoids a header dependency.
+	for (size_t i = 0; i < args.size(); ++i) {
+		for (size_t j = i + 1; j < args.size(); ++j) {
+			if (args[i].name == args[j].name)
+				return result::error_duplicate_array_name;
+		}
 	}
 
 	// test if the file exists
@@ -5597,9 +5811,15 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 	// write all arrays. append .npy to each argument name
 	for (auto &arg: args) {
 		u8_vector buffer;
-		to_npy_buffer(arg.array, buffer);
+		result enc_res = to_npy_buffer(arg.array, buffer);
+		if (is_error(enc_res)) {
+			zip_interface.close(zip_state);
+			zip_interface.release(&zip_state);
+			return enc_res;
+		}
 		std::string name = arg.name + ".npy";
 		if (zip_interface.write(zip_state, name, std::move(buffer), compress, compression_level) != zip::result::ok) {
+			zip_interface.close(zip_state);
 			zip_interface.release(&zip_state);
 			return result::error_file_write_failed;
 		}
@@ -5636,13 +5856,26 @@ savez_compressed(std::filesystem::path filepath, std::vector<savez_arg> args, bo
 
 
 /*
+ * ndarray_ref - tiny ndarray reference wrapper used by the unnamed-savez
+ * overloads so that callers can write `savez("...", {arr1, arr2})` without
+ * having to pull in std::reference_wrapper (and the rest of <functional>).
+ */
+struct ndarray_ref
+{
+	ndarray *ptr;
+	ndarray_ref(ndarray &a) : ptr(&a) {}
+	operator ndarray&() const { return *ptr; }
+};
+
+
+/*
  * savez - save unamed arrays to an uncompressed npz file
  *
  * Note that the arrays will receive a name of the format arr_i, where i is the
  * position in the args vector
  */
 inline result
-savez(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false)
+savez(std::filesystem::path filepath, std::vector<ndarray_ref> args, bool overwrite=false)
 {
 	std::vector<savez_arg> _args;
 	size_t i = 0;
@@ -5659,7 +5892,7 @@ savez(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray
  * position in the args vector
  */
 inline result
-savez_compressed(std::filesystem::path filepath, std::vector<std::reference_wrapper<ndarray>> args, bool overwrite=false, u32 compression_level=0)
+savez_compressed(std::filesystem::path filepath, std::vector<ndarray_ref> args, bool overwrite=false, u32 compression_level=0)
 {
 	std::vector<savez_arg> _args;
 	size_t i = 0;
@@ -5680,7 +5913,9 @@ release(Args&&... args)
 
 
 enum class source_type : u16 {
+#ifdef NCR_NUMPY_HAS_MMAP
 	mmap,
+#endif
 	fstream,
 	buffered,
 };
@@ -5690,36 +5925,30 @@ template <source_type>
 struct npysource;
 
 
+#ifdef NCR_NUMPY_HAS_MMAP
 template<>
 struct npysource<source_type::mmap>
 {
-	mmap_buffer* buf;
+	mmap_buffer
+		*buf = nullptr;
 
 	inline result
 	open(std::filesystem::path filepath)
 	{
-		if (buf)
-			close();
+		if (buf) {
+			// re-open: best-effort close of the previous mapping; if that
+			// fails the new mapping below will fail anyway and we propagate
+			// that error.
+			(void) close();
+		}
 		buf = new mmap_buffer();
 
-		ncr::numpy::open(filepath.c_str(), buf);
-
-		// try to open the foo
-		int fd = ::open(filepath.c_str(), O_RDONLY);
-		if (fd == -1) {
-			return result::error_file_open_failed;
+		result res = ncr::numpy::open(filepath.c_str(), buf);
+		if (is_error(res)) {
+			delete buf;
+			buf = nullptr;
+			return res;
 		}
-
-		// try to memmap the foo
-		buf->size = lseek(fd, 0, SEEK_END);
-		lseek(fd, 0, SEEK_SET);
-		buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ, MAP_PRIVATE, fd, 0);
-		::close(fd);
-		if (buf->data == MAP_FAILED) {
-			close();
-			return result::error_mmap_failed;
-		}
-		buf->position = 0;
 		return result::ok;
 	}
 
@@ -5746,7 +5975,7 @@ struct npysource<source_type::mmap>
 		return result::ok;
 	}
 
-	template <Writable<u8> D>
+	template <typename D>
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
@@ -5790,13 +6019,17 @@ struct npysource<source_type::mmap>
 		return buf->position >= buf->size;
 	}
 };
+#endif // NCR_NUMPY_HAS_MMAP
 
 
 template<>
 struct npysource<source_type::fstream>
 {
-	std::ifstream fstream;
-	size_t total_size;
+	std::ifstream
+		fstream;
+
+	size_t
+		total_size = 0;
 
 	inline result
 	open(std::filesystem::path filepath)
@@ -5831,7 +6064,7 @@ struct npysource<source_type::fstream>
 		return result::ok;
 	}
 
-	template <Writable<u8> D>
+	template <typename D>
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
@@ -5875,15 +6108,22 @@ struct npysource<source_type::fstream>
 template<>
 struct npysource<source_type::buffered>
 {
-	vector_buffer *buffer;
+	vector_buffer
+		*buffer = nullptr;
 
-	size_t    total_size;
-	size_t    position;
+	size_t
+		total_size  = 0;
+
+	size_t
+		position    = 0;
 
 	inline result
 	open(std::filesystem::path filepath)
 	{
 		constexpr bool unsafe_read = false;
+
+		if (buffer)
+			(void) close();
 
 		std::ifstream fstream;
 		fstream.open(filepath, std::ios::binary);
@@ -5928,7 +6168,7 @@ struct npysource<source_type::buffered>
 		return result::ok;
 	}
 
-	template <Writable<u8> D>
+	template <typename D>
 	std::size_t
 	read(D &&dest, std::size_t size)
 	{
@@ -6011,7 +6251,7 @@ protected:
 		// first place to avoid copying
 		bool do_seek = Viewable<Source> || dirty_buffer;
 		if (do_seek)
-			source.seek(item_size, std::ios::cur);
+			(void) source.seek(item_size, std::ios::cur);
 
 		if (source.eof())
 			is_end = true;
@@ -6094,7 +6334,12 @@ struct typed_npyreader_iterator : public npyreader_iterator_base<Source>
 };
 
 
+// default to mmap when available, otherwise fall back to a buffered reader
+#ifdef NCR_NUMPY_HAS_MMAP
 template <source_type E = source_type::mmap>
+#else
+template <source_type E = source_type::buffered>
+#endif
 struct npyreader
 {
 	using type        = npyreader<E>;
@@ -6121,8 +6366,7 @@ struct npyreader
 		if (offset > source.size())
 			return result::error_invalid_item_offset;
 
-		source.seek(offset);
-		return result::ok;
+		return source.seek(offset);
 	}
 
 	template <typename T>
@@ -6403,7 +6647,7 @@ libzip_release(backend_state **bptr)
 		return result::error_invalid_argument;
 	(*bptr)->write_buffers.clear();
 	delete *bptr;
-	bptr = nullptr;
+	*bptr = nullptr;
 	return result::ok;
 }
 
