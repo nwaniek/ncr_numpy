@@ -4,3 +4,4 @@
 -Wextra
 -pedantic
 -I.
+-Iinclude

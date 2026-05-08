@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.6.0
+#define NCR_NUMPY_VERSION 0.6.1
 
 #include <cstring>
 #include <cassert>
@@ -41,9 +41,8 @@
 #include <span>
 #include <cstdint>
 #include <string>
-#include <sys/types.h>
-#include <bit>
 #include <cstddef>
+#include <bit>
 #include <algorithm>
 #include <memory>
 #include <charconv>
@@ -53,6 +52,7 @@
 #include <fstream>
 #include <iterator>
 
+// bswapdefs.hpp ///////////////////////////////////////////////////////////////
 /*
  * ncr/bswapdefs.hpp - definitions for bswap16, bswap32, and bswap64
  *
@@ -131,6 +131,7 @@
 
 #endif /* _ba6cf59bec5b4f2b92694c85e64f44cb_ */
 
+// types.hpp ///////////////////////////////////////////////////////////////////
 /*
  * types.hpp - basic types used in ncr
  *
@@ -254,6 +255,7 @@ static_assert(sizeof(f64) == 8, "ncr expects sizeof(f64) == 8");
 
 #endif /* _909f868e37c64952a3871f2f678d0778_ */
 
+// unicode.hpp /////////////////////////////////////////////////////////////////
 /*
  * ncr_unicode - utilities for working with unicode (UTF-8, UCS-4) strings
  *
@@ -615,6 +617,7 @@ operator<<(std::ostream& os, const utf8string<N> &utf8)
 
 #endif /* _53994d0d2b6d47028f271c81f3b8f52a_ */
 
+// ndindex.hpp /////////////////////////////////////////////////////////////////
 /*
  * ncr/ndindex.hpp - functions to calculate indexes of N-D arrays
  */
@@ -867,6 +870,7 @@ compute_strides(const std::vector<T> &shape, std::vector<T> &strides, storage_or
 
 #endif /* _8840dbd5d93342cda97ac95e4a7ed8b3_ */
 
+// dtype.hpp ///////////////////////////////////////////////////////////////////
 /*
  * ncr/dtype.hpp - data type definition for numpy nd-arrays
  */
@@ -1160,6 +1164,7 @@ operator<< (std::ostream &os, const dtype &dt)
 
 #endif /* _f7e9e094e0ba4453850c999f0e7f2a56_ */
 
+// utility.hpp /////////////////////////////////////////////////////////////////
 /*
  * ncr/utility.hpp - utility definitions and functions
  *
@@ -1449,6 +1454,7 @@ hexdump(std::ostream& os, const std::vector<uint8_t> &data)
 
 #endif /* _65fc1481d8d149029547d3932c93f2e0_ */
 
+// npyerror.hpp ////////////////////////////////////////////////////////////////
 /*
  * ncr/npyerror.hpp - return codes used throughout ncr::numpy
  *
@@ -1565,6 +1571,7 @@ struct ErrorContext
 
 #endif /* _8c9e4fd8e3de4665b327b3e0a6481c9f_ */
 
+// npybuffers.hpp //////////////////////////////////////////////////////////////
 /*
  * ncr/npybuffers.hpp - some buffer backends for npyfile and ndarray
  *
@@ -1873,6 +1880,7 @@ struct npybuffer
 
 #endif /* _69a274a94acf465aaa21a9e5046fa6ed_ */
 
+// ndarray.hpp /////////////////////////////////////////////////////////////////
 /*
  * ndarray.hpp - n-dimensional array implementation
  *
@@ -2928,6 +2936,7 @@ void print_tensor(ndarray_t<T> &arr, std::string indent="")
 
 #endif /* _719685da6c474222b60a9d28795719db_ */
 
+// strconv.hpp /////////////////////////////////////////////////////////////////
 /*
  * strconv.hpp - collection of functions to convert types to strings
  *
@@ -3001,6 +3010,7 @@ std::string to_string(const T (&arr)[N], const strfmtopts& opts = {})
 
 #endif /* _f53b5d05a7dd47668fbad51a033a87b7_ */
 
+// pyparser.hpp ////////////////////////////////////////////////////////////////
 /*
  * pyparser.hpp - a simple parser for python data
  *
@@ -4133,6 +4143,7 @@ struct PyParser
 
 #endif /* _f03a19a69cac46f38404d117df9d9c37_ */
 
+// bits.hpp ////////////////////////////////////////////////////////////////////
 /*
  * bits.hpp - bit operations
  *
@@ -4371,6 +4382,7 @@ toggle_bit(const T v, const U N)
 
 #endif /* _6029ff7cb97c498f8a26966c49a873fe_ */
 
+// zip.hpp /////////////////////////////////////////////////////////////////////
 /*
  * zip - zip backend interface declaration
  *
@@ -4528,6 +4540,7 @@ namespace zip {
 
 #endif /* _8d2a79e5218b40e3807880febfa294a0_ */
 
+// npyfile.hpp /////////////////////////////////////////////////////////////////
 #ifndef _9750a253a01642ea81d4721d4c92ad7c_
 #define _9750a253a01642ea81d4721d4c92ad7c_
 
@@ -6449,6 +6462,7 @@ close(npyreader<E>& reader)
  * backends and disable the libzip implementation that ships with ncr_numpy.
  */
 #ifndef NCR_NUMPY_DISABLE_ZIP_LIBZIP
+// zip_libzip.hpp //////////////////////////////////////////////////////////////
 /*
  * zip_libzip.hpp - ncr zip backend based on libzip
  *

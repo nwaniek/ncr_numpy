@@ -1,0 +1,31 @@
+/*
+ * ncr_numpy.hpp - single file header for working with numpy files.
+ *
+ * NOTE: This file is an amalgamation of several individual header files that
+ * provide functionality to work with numpy npy files. Combining all the
+ * individual headers into one large header means that this is the only header
+ * that is required to work with numpy files.
+ *
+ * SPDX-License-Identifier: MIT
+ * SPDX-FileCopyrightText: 2023-2026 Nicolai Waniek <n@rochus.net>
+ *
+ * @ncr-fusor-import ../LICENSE strip_lines 2 5
+ */
+
+#define NCR_NUMPY_VERSION @ncr-fusor-import ../VERSION
+
+//@ncr-fusor-stdheaders
+
+//@ncr-fusor-include "ncr/bswapdefs.hpp"
+//@ncr-fusor-include "ncr/ndarray.hpp"
+//@ncr-fusor-include "ncr/pyparser.hpp"
+//@ncr-fusor-include "ncr/npyfile.hpp"
+
+/*
+ * the zip implementation can be actively turned off by setting the compiler
+ * flag NCR_NUMPY_DISABLE_ZIP_LIBZIP. This allows to develop custom other zip
+ * backends and disable the libzip implementation that ships with ncr_numpy.
+ */
+#ifndef NCR_NUMPY_DISABLE_ZIP_LIBZIP
+//@ncr-fusor-include "ncr/impl/zip_libzip.hpp"
+#endif
