@@ -10,17 +10,17 @@
  * SPDX-FileCopyrightText: 2023-2026 Nicolai Waniek <n@rochus.net>
  *
  * MIT License
- *
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- *
+ * 
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- *
+ * 
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.6.1
+#define NCR_NUMPY_VERSION 0.6.5
 
 #include <cstring>
 #include <cassert>
@@ -5739,7 +5739,7 @@ from_npy_callback(std::filesystem::path filepath,
 	u64_vector    shape;
 	storage_order order;
 	auto source = ifstream_reader(file);
-	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res)))
+	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) 
 		return res;
 	if constexpr (ArrayPropertiesCallback<G>) {
 		bool cb_result = array_properties_callback(dt, shape, order);
@@ -5756,7 +5756,7 @@ from_npy_callback(std::filesystem::path filepath,
 		return res;
 	}
 	size_t items_per_chunk = npy_callback_chunk_target_bytes / item_size;
-	if (items_per_chunk == 0)
+	if (items_per_chunk == 0) 
 		items_per_chunk = 1;
 	const size_t chunk_bytes = items_per_chunk * item_size;
 	u8_vector chunk(chunk_bytes, 0);
