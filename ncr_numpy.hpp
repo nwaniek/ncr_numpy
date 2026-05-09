@@ -10,17 +10,17 @@
  * SPDX-FileCopyrightText: 2023-2026 Nicolai Waniek <n@rochus.net>
  *
  * MIT License
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -1625,7 +1625,12 @@ open(const char *filepath, mmap_buffer* buf)
 
 	buf->size = lseek(fd, 0, SEEK_END);
 	lseek(fd, 0, SEEK_SET);
-	buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ, MAP_PRIVATE, fd, 0);
+	// MAP_PRIVATE + PROT_READ|PROT_WRITE: pages are shared-clean until the
+	// process writes, at which point the kernel COWs to a private page.
+	// This matches numpy.load semantics (the user gets a writable copy)
+	// while still being zero-copy for read-only workflows. Disk file is
+	// never touched.
+	buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 	::close(fd);
 	if (buf->data == MAP_FAILED) {
 		buf->size = 0;
@@ -2397,11 +2402,19 @@ struct ndarray
 	/*
 	 * apply - apply a function to each value in the array
 	 *
-	 * This function applies a user-specified function to each element of the
-	 * array. The user-specified function will receive a constant subrange of u8
-	 * containing the array element, and is expected to return a vector
-	 * containing u8 of the same size as the range. If there is a size-mismatch,
-	 * this function will throw an std::length_error.
+	 * Two callback shapes are supported:
+	 *
+	 *   1. void(u8_span)                  -> in-place mutation. The lambda
+	 *      receives a mutable view into the array's storage and writes the
+	 *      result directly. No per-element heap allocation. Preferred for
+	 *      bulk operations such as endianness conversion.
+	 *
+	 *   2. u8_vector(u8_const_span)       -> returns a freshly built buffer
+	 *      that is then copied back. Kept for backward compatibility; throws
+	 *      std::length_error if the returned vector size does not match the
+	 *      element size.
+	 *
+	 * Selection happens at compile time via the function signature.
 	 *
 	 * TODO: provide an apply function which also passes the element index back
 	 * to the transformation function
@@ -2412,13 +2425,24 @@ struct ndarray
 	{
 		size_t offset = 0;
 		auto stride = _dtype.item_size;
-		while (offset < _data_size) {
-			auto span = u8_span(_data_ptr + offset, stride);
-			auto new_value = func(span);
-			if (new_value.size() != span.size())
-				throw std::length_error("Invalid size of result");
-			std::copy(new_value.begin(), new_value.end(), _data_ptr + offset);
-			offset += stride;
+
+		// in-place form: lambda mutates a u8_span and returns void
+		if constexpr (std::is_invocable_r_v<void, Func, u8_span>) {
+			while (offset < _data_size) {
+				func(u8_span(_data_ptr + offset, stride));
+				offset += stride;
+			}
+		}
+		// allocating form: lambda returns a fresh u8_vector that is copied back
+		else {
+			while (offset < _data_size) {
+				auto span = u8_span(_data_ptr + offset, stride);
+				auto new_value = func(span);
+				if (new_value.size() != span.size())
+					throw std::length_error("Invalid size of result");
+				std::copy(new_value.begin(), new_value.end(), _data_ptr + offset);
+				offset += stride;
+			}
 		}
 	}
 
@@ -4584,6 +4608,14 @@ concept GenericReaderCallback = requires(F f, const dtype& dt, const u64_vector 
     { f(dt, shape, order, index, std::move(item)) } -> std::same_as<bool>;
 };
 
+// span-based generic callback. Same parameters as GenericReaderCallback but
+// the item is a non-owning view into a reused chunk buffer, which avoids the
+// per-item heap allocation of the vector-taking variant.
+template<typename F>
+concept GenericReaderCallbackSpan = requires(F f, const dtype& dt, const u64_vector &shape, const storage_order &order, u64 index, u8_const_span item) {
+    { f(dt, shape, order, index, item) } -> std::same_as<bool>;
+};
+
 template <typename T, typename F>
 concept TypedReaderCallbackFlat = requires(F f, u64 index, T value) {
 	{ f(index, value) } -> std::same_as<bool>;
@@ -4819,6 +4851,53 @@ struct buffer_reader
 	u8_vector   &_data;
 	std::size_t _pos;
 };
+
+
+#ifdef NCR_NUMPY_HAS_MMAP
+/*
+ * mmap_reader - wrapper for an mmap_buffer to make it a ReadableSource
+ *
+ * Mirrors buffer_reader but works against an existing mmap_buffer (so the
+ * underlying storage stays mapped instead of being a std::vector). Used by
+ * the mmap fast-path of from_npy to parse the header without copying any of
+ * the file payload.
+ */
+struct mmap_reader
+{
+	mmap_reader(mmap_buffer *buf) : _buf(buf), _pos(0) {}
+
+	template <typename D>
+	std::size_t
+	read(D &&dest, std::size_t size)
+	{
+		auto first = std::begin(dest);
+		auto last  = std::end(dest);
+		size_t dest_capacity = static_cast<size_t>(last - first);
+		if (size > dest_capacity)
+			size = dest_capacity;
+		size_t available = (_pos < _buf->size) ? _buf->size - _pos : 0;
+		if (size > available)
+			size = available;
+		std::copy_n(_buf->data + _pos, size, first);
+		_pos += size;
+		return size;
+	}
+
+	template <typename T>
+	requires std::same_as<T, u8>
+	std::size_t
+	read(T* dest, std::size_t size)
+	{
+		return read(std::span<T>(dest, size), size);
+	}
+
+	inline bool
+	eof() noexcept { return _pos >= _buf->size; }
+
+	mmap_buffer *_buf;
+	std::size_t  _pos;
+};
+#endif // NCR_NUMPY_HAS_MMAP
 
 
 /*
@@ -5254,6 +5333,13 @@ compute_data_size(Reader &source, npyfile &npy)
 	if constexpr (std::is_same_v<Reader, buffer_reader>) {
 		npy.data_size = source._data.size() - source._pos;
 	}
+#ifdef NCR_NUMPY_HAS_MMAP
+	else if constexpr (std::is_same_v<Reader, mmap_reader>) {
+		npy.data_size = (source._buf && source._buf->size > source._pos)
+			? source._buf->size - source._pos
+			: 0;
+	}
+#endif
 	else {
 		npy.data_size = 0;
 	}
@@ -5328,6 +5414,48 @@ from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 
 	return res;
 }
+
+
+#ifdef NCR_NUMPY_HAS_MMAP
+/*
+ * from_mmap_buffer - build an ndarray on top of an existing mmap_buffer.
+ *
+ * Takes ownership of `mbuf`. The npyfile's data_offset is parsed from the
+ * mapped header bytes; the array's data pointer ends up pointing directly
+ * into the mapped region (no payload copy). On error the mapping is
+ * released. On success the resulting ndarray owns the mapping and unmap
+ * happens during ndarray::release().
+ */
+inline result
+from_mmap_buffer(mmap_buffer *mbuf, npyfile &npy, ndarray &dest)
+{
+	auto res = result::ok;
+
+	npy.streaming = false;
+
+	dtype         dt;
+	u64_vector    shape;
+	storage_order order;
+
+	auto source = mmap_reader(mbuf);
+	if ((res = process_file_header(source, npy, dt, shape, order), is_error(res))) {
+		// header parse failed - clean up the mapping ourselves since
+		// nothing further will adopt it
+		(void) ncr::numpy::release(mbuf);
+		return res;
+	}
+
+	npybuffer* npybuf = new npybuffer(npybuffer::type::mmap);
+	npybuf->mmap     = mbuf;
+	npybuf->mmap->data_offset = npy.data_offset;
+
+	dest.assign(std::move(dt),
+				std::move(shape),
+				npybuf,
+				order);
+	return res;
+}
+#endif // NCR_NUMPY_HAS_MMAP
 
 
 inline bool
@@ -5524,10 +5652,24 @@ from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullpt
 
 
 /*
+ * threshold above which from_npy prefers a memory-mapped load over a
+ * vector-backed read. Below this size mmap setup overhead (open/mmap/munmap
+ * plus a TLB pollution) outweighs the saved copy, and a quick read+vector
+ * is faster.
+ */
+#ifndef NCR_NUMPY_MMAP_THRESHOLD_BYTES
+#define NCR_NUMPY_MMAP_THRESHOLD_BYTES (64ull * 1024ull)
+#endif
+
+/*
  * from_nyp - read a file into a container
  *
- * When reading a file into an ndarray, we read the file in one go into a buffer
- * and then process it.
+ * For regular files larger than NCR_NUMPY_MMAP_THRESHOLD_BYTES this attempts
+ * a zero-copy memory-mapped load: the array's data pointer ends up pointing
+ * directly into the mapped region. Smaller files and non-mmap builds fall
+ * back to the existing read-into-vector path. Define NCR_NUMPY_DISABLE_MMAP
+ * (compile-time) or NCR_NUMPY_NO_MMAP_LOAD (compile-time) to force the
+ * vector path.
  */
 template <typename NDArrayType, bool unsafe_read = true>
 result
@@ -5540,14 +5682,48 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 	result res = result::ok;
 	std::ifstream file;
 	if ((res = open_npy(filepath, file), is_error(res))) return res;
+
+#if defined(NCR_NUMPY_HAS_MMAP) && !defined(NCR_NUMPY_NO_MMAP_LOAD)
+	const u64 filesize = get_file_size(file);
+	if (filesize >= NCR_NUMPY_MMAP_THRESHOLD_BYTES) {
+		// fast path: mmap the file and build the array on top of the mapping.
+		// the ifstream is no longer needed after the zip-magic check.
+		file.close();
+
+		mmap_buffer *mbuf = new mmap_buffer();
+		result mres = ncr::numpy::open(filepath.c_str(), mbuf);
+		if (!is_error(mres)) {
+			npyfile _tmp;
+			npyfile *npy_ptr = npy ? npy : &_tmp;
+			return from_mmap_buffer(mbuf, *npy_ptr, array);
+		}
+		// mmap failed; fall through to the vector path. delete the empty
+		// mmap_buffer first since open() didn't bind anything to it.
+		delete mbuf;
+
+		// reopen the ifstream for the fallback
+		std::ifstream file2;
+		if ((res = open_npy(filepath, file2), is_error(res))) return res;
+		return from_npy_ifstream<NDArrayType, unsafe_read>(file2, array, npy);
+	}
+#endif
 	return from_npy_ifstream<NDArrayType, unsafe_read>(file, array, npy);
 }
 
 
+// target size for the chunk buffer used when iterating items via a callback.
+// Picking a value in the high tens of KiB amortises ifstream::read overhead
+// over many items without growing the working set noticeably. The actual
+// chunk size used is rounded down to a whole number of items but at least
+// one item.
+constexpr size_t npy_callback_chunk_target_bytes = 64 * 1024;
 
 template <typename T, typename F, typename G>
 result
-from_npy_callback(std::filesystem::path filepath, G array_properties_callback, F data_callback, npyfile *npy = nullptr)
+from_npy_callback(std::filesystem::path filepath,
+                  G array_properties_callback,
+                  F data_callback,
+                  npyfile *npy = nullptr)
 {
 	// try to open the file
 	result res = result::ok;
@@ -5563,74 +5739,116 @@ from_npy_callback(std::filesystem::path filepath, G array_properties_callback, F
 	u64_vector    shape;
 	storage_order order;
 	auto source = ifstream_reader(file);
-	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) return res;
+	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res)))
+		return res;
 	if constexpr (ArrayPropertiesCallback<G>) {
 		bool cb_result = array_properties_callback(dt, shape, order);
 		if (!cb_result)
 			return res;
 	}
 
-	// at this point we know the item size, and can read items from the file
-	// until we hit eof. Hoist the buffer allocation out of the loop: for
-	// typed callbacks it's reused as-is, while the generic callback variant takes
-	// ownership via std::move and we reallocate next iteration.
-	u8_vector buffer(dt.item_size, 0);
-	for (u64 i = 0;; ++i) {
-		if constexpr (GenericReaderCallback<F>) {
-			if (buffer.size() != dt.item_size)
-				buffer.assign(dt.item_size, 0);
+	// chunked read: pull a multiple of item_size bytes per ifstream::read so
+	// the per-item dispatch is just pointer arithmetic + a memcpy. For the
+	// typed and span-generic callbacks this avoids any per-item allocation.
+	const size_t item_size  = dt.item_size;
+	if (item_size == 0) {
+		// nothing to iterate; treat as empty file
+		return res;
+	}
+	size_t items_per_chunk = npy_callback_chunk_target_bytes / item_size;
+	if (items_per_chunk == 0)
+		items_per_chunk = 1;
+	const size_t chunk_bytes = items_per_chunk * item_size;
+	u8_vector chunk(chunk_bytes, 0);
+
+	u64 i = 0;
+	bool stop = false;
+	while (!stop) {
+		size_t bytes_read = source.read(chunk, chunk_bytes);
+
+		// short read means EOF, truncation, or stream failure
+		if (bytes_read < chunk_bytes) {
+			if (source.fail() && !source.eof()) {
+				res = result::error_file_read_failed;
+				break;
+			}
+			// any leftover bytes after the last full item indicate truncation
+			if (bytes_read % item_size != 0) {
+				res = result::error_file_truncated;
+				break;
+			}
+			if (bytes_read == 0)
+				break;
 		}
-		size_t bytes_read = source.read(buffer, dt.item_size);
-		if (bytes_read != dt.item_size) {
-			// EOF -> nothing more to read, w'ere in a good state
-			if (bytes_read == 0 && source.eof())
-				break;
+
+		const size_t items_in_chunk = bytes_read / item_size;
+		for (size_t k = 0; k < items_in_chunk; ++k, ++i) {
+			const u8* item_ptr = chunk.data() + k * item_size;
+
+			if constexpr (GenericReaderCallbackSpan<F>) {
+				u8_const_span item_view(item_ptr, item_size);
+				if (!data_callback(dt, shape, order, i, item_view)) {
+					stop = true;
+					break;
+				}
+			}
+			else if constexpr (GenericReaderCallback<F>) {
+				// preserve original semantics: hand the user an owning vector.
+				// One allocation per item is unavoidable for this contract;
+				// callers wanting zero-alloc should use the span overload.
+				u8_vector item(item_ptr, item_ptr + item_size);
+				if (!data_callback(dt, shape, order, i, std::move(item))) {
+					stop = true;
+					break;
+				}
+			}
+			else if constexpr (TypedReaderCallbackFlat<T, F>) {
+				T value;
+				std::memcpy(&value, item_ptr, sizeof(T));
+				if (!data_callback(i, value)) {
+					stop = true;
+					break;
+				}
+			}
+			else if constexpr (TypedReaderCallbackMulti<T, F>) {
+				T value;
+				std::memcpy(&value, item_ptr, sizeof(T));
+				u64_vector multi_index = unravel_index(i, shape, order);
+				if (!data_callback(std::move(multi_index), value)) {
+					stop = true;
+					break;
+				}
+			}
 			else {
-				// there was some failure while reading. this might also be set
-				// when trying to read more bytes than available
-				// TODO: determine when this might happen
-				if (source.fail())
-					res = result::error_file_read_failed;
-
-				// the file is truncated, there were not enough bytes for
-				// another item.
-				else
-					res = result::error_file_truncated;
-
-				break;
+				static_assert(GenericReaderCallback<F> || GenericReaderCallbackSpan<F> || TypedReaderCallback<T, F>,
+							  "The provided function does not satisfy any of the required concepts.");
 			}
 		}
 
-		// select the right callback variant. if the callback returns false, the
-		// user wants an early exit
-		if constexpr (GenericReaderCallback<F>) {
-			if (!data_callback(dt, shape, order, i, std::move(buffer)))
-				break;
-		}
-		else if constexpr (TypedReaderCallbackFlat<T, F>) {
-			// when the callback returns false, the user wants an early exit
-			T value;
-			std::memcpy(&value, buffer.data(), sizeof(T));
-			if (!data_callback(i, value))
-				break;
-		}
-		else if constexpr (TypedReaderCallbackMulti<T, F>) {
-			// when the callback returns false, the user wants an early exit
-			u64_vector multi_index = unravel_index(i, shape, order);
-			T value;
-			std::memcpy(&value, buffer.data(), sizeof(T));
-			if (!data_callback(multi_index, value))
-				break;
-		}
-		else {
-			static_assert(GenericReaderCallback<F> || TypedReaderCallback<T, F>,
-						  "The provided function does not satisfy any of the required concepts.");
-		}
+		// short read with all complete items consumed -> we've reached EOF
+		if (bytes_read < chunk_bytes)
+			break;
 	}
 	return res;
 }
 
 template <typename F> requires GenericReaderCallback<F>
+result
+from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
+{
+	return from_npy_callback<void>(
+		std::move(filepath),
+		nullptr,
+		std::forward<F>(callback),
+		npy);
+}
+
+
+// span-based generic-callback overload. Same API as the vector-taking
+// overload but the item is delivered as a u8_const_span view into a reused
+// internal chunk buffer. Eliminates the per-item heap allocation.
+template <typename F>
+requires GenericReaderCallbackSpan<F> && (!GenericReaderCallback<F>)
 result
 from_npy(std::filesystem::path filepath, F callback, npyfile *npy = nullptr)
 {

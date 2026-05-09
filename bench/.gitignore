@@ -1,0 +1,6 @@
+bench
+bench_no_mmap
+assets/big_f32_1g.npy
+assets/big_f64_512m.npy
+assets/small_u64_256m.npy
+assets/many_arrays.npz

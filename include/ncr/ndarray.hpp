@@ -529,11 +529,19 @@ struct ndarray
 	/*
 	 * apply - apply a function to each value in the array
 	 *
-	 * This function applies a user-specified function to each element of the
-	 * array. The user-specified function will receive a constant subrange of u8
-	 * containing the array element, and is expected to return a vector
-	 * containing u8 of the same size as the range. If there is a size-mismatch,
-	 * this function will throw an std::length_error.
+	 * Two callback shapes are supported:
+	 *
+	 *   1. void(u8_span)                  -> in-place mutation. The lambda
+	 *      receives a mutable view into the array's storage and writes the
+	 *      result directly. No per-element heap allocation. Preferred for
+	 *      bulk operations such as endianness conversion.
+	 *
+	 *   2. u8_vector(u8_const_span)       -> returns a freshly built buffer
+	 *      that is then copied back. Kept for backward compatibility; throws
+	 *      std::length_error if the returned vector size does not match the
+	 *      element size.
+	 *
+	 * Selection happens at compile time via the function signature.
 	 *
 	 * TODO: provide an apply function which also passes the element index back
 	 * to the transformation function
@@ -544,13 +552,24 @@ struct ndarray
 	{
 		size_t offset = 0;
 		auto stride = _dtype.item_size;
-		while (offset < _data_size) {
-			auto span = u8_span(_data_ptr + offset, stride);
-			auto new_value = func(span);
-			if (new_value.size() != span.size())
-				throw std::length_error("Invalid size of result");
-			std::copy(new_value.begin(), new_value.end(), _data_ptr + offset);
-			offset += stride;
+
+		// in-place form: lambda mutates a u8_span and returns void
+		if constexpr (std::is_invocable_r_v<void, Func, u8_span>) {
+			while (offset < _data_size) {
+				func(u8_span(_data_ptr + offset, stride));
+				offset += stride;
+			}
+		}
+		// allocating form: lambda returns a fresh u8_vector that is copied back
+		else {
+			while (offset < _data_size) {
+				auto span = u8_span(_data_ptr + offset, stride);
+				auto new_value = func(span);
+				if (new_value.size() != span.size())
+					throw std::length_error("Invalid size of result");
+				std::copy(new_value.begin(), new_value.end(), _data_ptr + offset);
+				offset += stride;
+			}
 		}
 	}
 

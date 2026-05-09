@@ -60,7 +60,12 @@ open(const char *filepath, mmap_buffer* buf)
 
 	buf->size = lseek(fd, 0, SEEK_END);
 	lseek(fd, 0, SEEK_SET);
-	buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ, MAP_PRIVATE, fd, 0);
+	// MAP_PRIVATE + PROT_READ|PROT_WRITE: pages are shared-clean until the
+	// process writes, at which point the kernel COWs to a private page.
+	// This matches numpy.load semantics (the user gets a writable copy)
+	// while still being zero-copy for read-only workflows. Disk file is
+	// never touched.
+	buf->data = (uint8_t*)mmap(NULL, buf->size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
 	::close(fd);
 	if (buf->data == MAP_FAILED) {
 		buf->size = 0;
