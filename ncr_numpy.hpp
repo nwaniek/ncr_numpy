@@ -2758,7 +2758,7 @@ private:
 	{
 		// TODO: verify that dtype.item_size and computed _size match
 		if (_shape.size() > 0) {
-			auto prod = 1;
+			u64 prod = 1;
 			for (auto &s: _shape)
 				prod *= s;
 			_size = prod;
