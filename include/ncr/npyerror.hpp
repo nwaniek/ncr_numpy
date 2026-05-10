@@ -68,6 +68,10 @@ namespace ncr { namespace numpy {
 	_(error_invalid_item_offset              , 1ul << 40)                     \
 	_(error_invalid_data_pointer             , 1ul << 41)                     \
 	_(error_munmap_failed                    , 1ul << 42)                     \
+    /* used in ndarray */                                                     \
+    _(error_invalid_value                    , 1ul << 43)                     \
+    _(error_index_out_of_bounds              , 1ul << 44)                     \
+    _(error_index_shape_mismatch             , 1ul << 45)                     \
 
 #define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
 	NAME = VALUE,

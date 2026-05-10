@@ -34,11 +34,11 @@
 #include <span>
 
 #include "ncr/types.hpp"
+#include "ncr/utility.hpp"
 #include "ncr/unicode.hpp"
 #include "ncr/ndindex.hpp"
 #include "ncr/dtype.hpp"
 #include "ncr/npybuffers.hpp"
-
 
 namespace ncr { namespace numpy {
 
@@ -237,11 +237,6 @@ ndarray_item::field(const ndarray_item &item, Args&&... args)
  */
 struct ndarray
 {
-	enum class result {
-		ok,
-		value_error
-	};
-
 	ndarray() {}
 	~ndarray() { _release_buffer(); }
 
@@ -372,39 +367,115 @@ struct ndarray
 	}
 
 
+	template<std::integral T>
+	constexpr ncr::numpy::result
+	normalize_index(T index, std::size_t shape_dim, std::size_t &actual)
+	{
+		if constexpr (std::is_signed_v<T>) {
+			if (index < 0) {
+				// Widen to ptrdiff_t (the signed counterpart of size_t for
+				// subscript arithmetic), so the addition cannot overflow for
+				// any plausibly sized array.
+				auto adjusted = static_cast<std::ptrdiff_t>(index)
+				              + static_cast<std::ptrdiff_t>(shape_dim);
+				if (adjusted < 0) {
+					return result::error_index_out_of_bounds;
+					// throw std::out_of_range("ndarray: index out of bounds");
+				}
+				actual = static_cast<std::size_t>(adjusted);
+				return result::ok;
+			}
+		}
+
+		// cmp_greater_equal handles the signed/unsigned mismatch without the
+		// usual integer-promotion footguns.
+		if (ncr::cmp_greater_equal(index, shape_dim)) {
+			return result::error_index_out_of_bounds;
+			// throw std::out_of_range("ndarray: index out of bounds");
+		}
+
+		actual = static_cast<std::size_t>(index);
+		return result::ok;
+	}
+
+	/*
+	 * Helper to handle the "throw or set" logic used in get
+	 */
+	void _report_error(result code, result* out_err, const char* msg) {
+    	if (out_err) {
+        	*out_err = code;
+    	} else {
+        	throw std::out_of_range(msg);
+    	}
+	}
+
+
 	/*
 	 * get - get the u8 span in the data buffer for an element
 	 */
 	template <typename ...Indexes>
 	u8_span
-	get(Indexes... index)
+	get_impl(result *err, Indexes... index)
 	{
+		static_assert((std::is_integral_v<Indexes> && ...), "All indices must be integers.");
+		if (err)
+			*err = result::ok;
+
 		// Number of indices must match number of dimensions.
-		if (_shape.size() != sizeof...(Indexes))
-			throw std::out_of_range("ndarray::get: number of indices does not match array shape");
+		if (_shape.size() != sizeof...(Indexes)) {
+			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
+			return u8_span();
+		}
 
 		// test if indexes are out of bounds. we don't handle negative indexes
 		if (sizeof...(Indexes) > 0) {
-			{
-				size_t i = 0;
-				bool valid_index = ((index >= 0 && (size_t)index < _shape[i++]) && ...);
-				if (!valid_index)
-					throw std::out_of_range("Index out of bounds\n");
-			}
-
 			// this ravels the index, i.e. turns it into a flat index. note that
 			// in contrast to numpy.ndarray.strides, _strides contains only
 			// number of elements, not bytes. the bytes will be multiplied in
 			// below when extracting u8_subrange
 			size_t i = 0;
 			size_t offset = 0;
-			((offset += index * _strides[i], i++), ...);
+			result status = result::ok;
 
+			// Use a lambda inside the fold to stop processing if an error occurs
+			auto process = [&](auto idx, size_t dim_size, size_t stride) {
+				if (status != result::ok)
+					return; // Short circuita
+
+				size_t actual_idx = 0;
+				status = normalize_index(idx, dim_size, actual_idx);
+
+				if (status == result::ok)
+					offset += actual_idx * stride;
+			};
+
+			// fold expression to process each index
+			(process(index, _shape[i], _strides[i]), ..., i++);
+
+			if (status != result::ok) {
+            	_report_error(status, err, "ndarray: index out of bounds");
+            	return u8_span();
+        	}
 			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
-			// TODO: evaluate if this is the correct response here
 			return u8_span();
+	}
+
+
+	template <typename ...Indexes>
+	u8_span
+	get(result *err, Indexes... index)
+	{
+		return get_impl(err, index...);
+	}
+
+
+	template <typename ...Indexes>
+	u8_span
+	get(Indexes... index)
+	{
+		return get_impl(nullptr, index...);
 	}
 
 
@@ -412,25 +483,48 @@ struct ndarray
 	 * get - get the u8 subrange in the data buffer for an element
 	 */
 	inline u8_span
-	get(u64_vector indexes)
+	get_impl(result *err, u64_vector indexes)
 	{
-		if (indexes.size() != _shape.size())
-			throw std::out_of_range("ndarray::get: number of indices does not match array shape");
+		if (err)
+			*err = result::ok;
+
+		if (indexes.size() != _shape.size()) {
+			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
+			return u8_span();
+		}
 
 		if (indexes.size() > 0) {
 			size_t offset = 0;
 			for (size_t i = 0; i < indexes.size(); i++) {
-				if (indexes[i] >= _shape[i])
-					throw std::out_of_range("Index out of bounds\n");
+
+				size_t actual_idx = 0;
+				result status = normalize_index(indexes[i], _shape[i], actual_idx);
+				if (status != result::ok) {
+					_report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
+					return u8_span();
+				}
 
 				// update offset
-				offset += indexes[i] * _strides[i];
+				offset += actual_idx * _strides[i];
 			}
 			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
 		}
 		else
-			// TODO: like above, evaluate if this is the correct response
 			return u8_span();
+	}
+
+
+	inline u8_span
+	get(u64_vector indexes)
+	{
+		return get_impl(nullptr, indexes);
+	}
+
+
+	inline u8_span
+	get(result *err, u64_vector indexes)
+	{
+		return get_impl(err, indexes);
 	}
 
 
@@ -650,7 +744,7 @@ struct ndarray
 	{
 		size_t n_elems = (length * ...);
 		if (n_elems != _size)
-			return result::value_error;
+			return result::error_invalid_value;
 
 		// set the shape
 		_shape.resize(sizeof...(Lengths));

@@ -190,6 +190,39 @@ template <typename T> constexpr size_t enum_count();
 
 namespace ncr {
 
+
+/*
+ * the following avoid having to pull in std's <utility>.
+ */
+template<class T, class U>
+constexpr bool
+cmp_less(T t, U u) noexcept
+{
+	if constexpr (std::is_signed_v<T> == std::is_signed_v<U>)
+		return t < u;
+	else if constexpr (std::is_signed_v<T>)
+		return t < 0 || std::make_unsigned_t<T>(t) < u;
+	else
+		return u >= 0 && t < std::make_unsigned_t<U>(u);
+}
+
+
+template <typename T, typename U>
+constexpr bool
+cmp_greater(T t, U u) noexcept
+{
+	return cmp_less(u, t);
+}
+
+
+template <typename T, typename U>
+constexpr bool
+cmp_greater_equal(T t, U u) noexcept
+{
+	return !cmp_less(t, u);
+}
+
+
 /*
  * ensure at compile time that one or more types are PODs
  */
