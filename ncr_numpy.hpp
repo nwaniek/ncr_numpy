@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.6.5
+#define NCR_NUMPY_VERSION 0.6.6
 
 #include <cstring>
 #include <cassert>
