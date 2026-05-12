@@ -5531,6 +5531,8 @@ validate_data_size(const npyfile &npy, const dtype &dt)
 
 /*
  * compute_data_size - compute the size of the data in a ReadableSource (if possible)
+ *
+ * TODO: we could
  */
 template <typename Reader>
 inline result
@@ -5540,6 +5542,13 @@ compute_data_size(Reader &source, npyfile &npy)
 	//       type detection
 	if constexpr (std::is_same_v<Reader, buffer_reader>) {
 		npy.data_size = source._data.size() - source._pos;
+	}
+	else if constexpr (std::is_same_v<Reader, ifstream_reader>) {
+		auto cur = source._stream.tellg();
+		source._stream.seekg(0, std::ios::end);
+		auto end = source._stream.tellg();
+		source._stream.seekg(cur);
+		npy.data_size = (end >= cur) ? static_cast<u64>(end - cur) : 0;
 	}
 #ifdef NCR_NUMPY_HAS_MMAP
 	else if constexpr (std::is_same_v<Reader, mmap_reader>) {
@@ -5825,7 +5834,7 @@ get_file_size(std::ifstream &is)
 /*
  * from_npy_ifstream - read an already opened ifstream into an ndarray
  */
-template <typename NDArrayType, bool unsafe_read = true>
+template <typename NDArrayType, bool bulk_read = true>
 result
 from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullptr)
 {
@@ -5837,7 +5846,7 @@ from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullpt
 	// is reasonably simple
 	auto filesize = get_file_size(file);
 	u8_vector buf(filesize);
-	if constexpr (unsafe_read) {
+	if constexpr (bulk_read) {
 		file.read(reinterpret_cast<char*>(buf.data()), filesize);
 		if (file.bad() || static_cast<u64>(file.gcount()) != filesize)
 			return result::error_file_read_failed;
@@ -6497,6 +6506,8 @@ struct npysource<source_type::fstream>
 	inline result
 	seek(size_t offset, std::ios_base::seekdir way = std::ios::beg)
 	{
+		// clear eof/fail before seeking
+		fstream.clear();
 		fstream.seekg(offset, way);
 		if (fstream.fail() or fstream.bad())
 			return result::error_seek_failed;
