@@ -410,135 +410,47 @@ struct ndarray
 	}
 
 
+
 	/*
-	 * get - get the u8 span in the data buffer for an element
+	 * get - get the u8 span/subrange in the data buffer for an element.
+	 *
+	 * Note: The variants without `result *err` argument will throw an exception
+	 * if there's a mismatch between the index and the array shape.
 	 */
 	template <typename ...Indexes>
 	u8_span
-	get_impl(result *err, Indexes... index)
-	{
-		static_assert((std::is_integral_v<Indexes> && ...), "All indices must be integers.");
-		if (err)
-			*err = result::ok;
-
-		// Number of indices must match number of dimensions.
-		if (_shape.size() != sizeof...(Indexes)) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
-			return u8_span();
-		}
-
-		// test if indexes are out of bounds. we don't handle negative indexes
-		if (sizeof...(Indexes) > 0) {
-			// this ravels the index, i.e. turns it into a flat index. note that
-			// in contrast to numpy.ndarray.strides, _strides contains only
-			// number of elements, not bytes. the bytes will be multiplied in
-			// below when extracting u8_subrange
-			size_t i = 0;
-			size_t offset = 0;
-			result status = result::ok;
-
-			// Use a lambda inside the fold to stop processing if an error occurs
-			auto process = [&](auto idx, size_t dim_size, size_t stride) {
-				if (status != result::ok)
-					return; // Short circuita
-
-				size_t actual_idx = 0;
-				status = normalize_index(idx, dim_size, actual_idx);
-
-				if (status == result::ok)
-					offset += actual_idx * stride;
-			};
-
-			// fold expression to process each index
-			(process(index, _shape[i], _strides[i]), ..., i++);
-
-			if (status != result::ok) {
-            	_report_error(status, err, "ndarray: index out of bounds");
-            	return u8_span();
-        	}
-			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
-		}
-		else
-			return u8_span();
-	}
-
+	get(Indexes... index)
+	{ return _get(nullptr, index...); }
 
 	template <typename ...Indexes>
 	u8_span
 	get(result *err, Indexes... index)
-	{
-		return get_impl(err, index...);
-	}
-
-
-	template <typename ...Indexes>
-	u8_span
-	get(Indexes... index)
-	{
-		return get_impl(nullptr, index...);
-	}
-
-
-	/*
-	 * get - get the u8 subrange in the data buffer for an element
-	 */
-	inline u8_span
-	get_impl(result *err, u64_vector indexes)
-	{
-		if (err)
-			*err = result::ok;
-
-		if (indexes.size() != _shape.size()) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
-			return u8_span();
-		}
-
-		if (indexes.size() > 0) {
-			size_t offset = 0;
-			for (size_t i = 0; i < indexes.size(); i++) {
-
-				size_t actual_idx = 0;
-				result status = normalize_index(indexes[i], _shape[i], actual_idx);
-				if (status != result::ok) {
-					_report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
-					return u8_span();
-				}
-
-				// update offset
-				offset += actual_idx * _strides[i];
-			}
-			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
-		}
-		else
-			return u8_span();
-	}
-
+	{ return _get(err, index...); }
 
 	inline u8_span
 	get(u64_vector indexes)
-	{
-		return get_impl(nullptr, indexes);
-	}
-
+	{ return _get(nullptr, indexes); }
 
 	inline u8_span
 	get(result *err, u64_vector indexes)
-	{
-		return get_impl(err, indexes);
-	}
+	{ return _get(err, indexes); }
 
 
 	/*
 	 * operator() - convenience function to avoid template creep in ncr::numpy
 	 *
 	 * when only reading values, use .value() instead to avoid an intermediary
-	 * ndarray_item. when writing values
+	 * ndarray_item. when writing values.
+	 *
+	 * Note: this function might throw an exception if there's a mismatch
+	 * between the indexes and the array's shape. To avoid throwing, use a get()
+	 * variant where you pass in a result pointer.
 	 */
 	template <typename... Indexes>
 	inline ndarray_item
 	operator()(Indexes... index)
 	{
-		return ndarray_item(this->get(index...), _dtype);
+		return ndarray_item(this->_get(nullptr, index...), _dtype);
 	}
 
 
@@ -547,11 +459,15 @@ struct ndarray
 	 *
 	 * this function accepts a vector of indexes to access an array element at
 	 * the specified location
+	 *
+	 * Note: this function might throw an exception if there's a mismatch
+	 * between the indexes and the array's shape. To avoid throwing, use a get()
+	 * variant where you pass in a result pointer.
 	 */
 	inline ndarray_item
 	operator()(u64_vector indexes)
 	{
-		return ndarray_item(this->get(indexes), _dtype);
+		return ndarray_item(this->_get(nullptr, indexes), _dtype);
 	}
 
 
@@ -573,7 +489,7 @@ struct ndarray
 			throw std::out_of_range(s.str());
 		}
 		T value;
-		std::memcpy(&value, this->get(index...).data(), sizeof(T));
+		std::memcpy(&value, this->_get(nullptr, index...).data(), sizeof(T));
 		return value;
 	}
 
@@ -600,7 +516,7 @@ struct ndarray
 			throw std::out_of_range(s.str());
 		}
 		T value;
-		std::memcpy(&value, this->get(indexes).data(), sizeof(T));
+		std::memcpy(&value, this->_get(nullptr, indexes).data(), sizeof(T));
 		return value;
 	}
 
@@ -829,6 +745,91 @@ private:
 
 	npybuffer*
 		_buffer = nullptr;
+
+	/*
+	 * get - get the u8 span in the data buffer for an element
+	 */
+	template <typename ...Indexes>
+	u8_span
+	_get(result *err, Indexes... index)
+	{
+		static_assert((std::is_integral_v<Indexes> && ...), "All indices must be integers.");
+		if (err)
+			*err = result::ok;
+
+		// Number of indices must match number of dimensions.
+		if (_shape.size() != sizeof...(Indexes)) {
+			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
+			return u8_span();
+		}
+
+		// test if indexes are out of bounds. we don't handle negative indexes
+		if (sizeof...(Indexes) > 0) {
+			// this ravels the index, i.e. turns it into a flat index. note that
+			// in contrast to numpy.ndarray.strides, _strides contains only
+			// number of elements, not bytes. the bytes will be multiplied in
+			// below when extracting u8_subrange
+			size_t i = 0;
+			size_t offset = 0;
+			result status = result::ok;
+
+			// Use a lambda inside the fold to stop processing if an error occurs
+			auto process = [&](auto idx, size_t dim_size, size_t stride) {
+				if (status != result::ok)
+					return; // Short circuita
+
+				size_t actual_idx = 0;
+				status = normalize_index(idx, dim_size, actual_idx);
+
+				if (status == result::ok)
+					offset += actual_idx * stride;
+			};
+
+			// fold expression to process each index
+			(process(index, _shape[i], _strides[i]), ..., i++);
+
+			if (status != result::ok) {
+            	_report_error(status, err, "ndarray: index out of bounds");
+            	return u8_span();
+        	}
+			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
+		}
+		else
+			return u8_span();
+	}
+
+	inline u8_span
+	_get(result *err, u64_vector indexes)
+	{
+		if (err)
+			*err = result::ok;
+
+		if (indexes.size() != _shape.size()) {
+			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
+			return u8_span();
+		}
+
+		if (indexes.size() > 0) {
+			size_t offset = 0;
+			for (size_t i = 0; i < indexes.size(); i++) {
+
+				size_t actual_idx = 0;
+				result status = normalize_index(indexes[i], _shape[i], actual_idx);
+				if (status != result::ok) {
+					_report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
+					return u8_span();
+				}
+
+				// update offset
+				offset += actual_idx * _strides[i];
+			}
+			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
+		}
+		else
+			return u8_span();
+	}
+
+
 
 
 	/*
