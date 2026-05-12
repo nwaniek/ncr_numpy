@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.6.8
+#define NCR_NUMPY_VERSION 0.6.10
 
 #include <cstring>
 #include <cassert>
@@ -757,43 +757,47 @@ to_ucs4(const std::string &utf8)
 	size_t i = 0;
 	size_t n = 0;
 	while (i < utf8.size()) {
-		u32 codepoint = 0;
-		u8 byte		  = utf8[i];
+		u8     b0  = static_cast<u8>(utf8[i]);
+		u32    cp  = 0;
+		size_t len = 0;
+		// Tight bounds on the first continuation byte. These encode the Unicode
+		// 15.0 Table 3-7 well-formedness constraints. We'll reject overlong
+		// forms (E0, F0), surrogates U+D800..U+DFFF (ED), and codepoints above
+		// U+10FFFF (F4). All other continuation bytes lie in 0x80..0xBF.
+		u8 lo = 0x80, hi = 0xBF;
 
-		if (byte <= 0x7F) {
-			codepoint = byte;
-			i += 1;
+		if      (b0 <= 0x7F) { cp = b0;        len = 1; }
+		else if (b0 <  0xC2) { throw std::runtime_error("Invalid UTF-8 byte sequence."); }
+		else if (b0 <= 0xDF) { cp = b0 & 0x1F; len = 2; }
+		else if (b0 == 0xE0) { cp = b0 & 0x0F; len = 3; lo = 0xA0; }
+		else if (b0 <= 0xEC) { cp = b0 & 0x0F; len = 3; }
+		else if (b0 == 0xED) { cp = b0 & 0x0F; len = 3; hi = 0x9F; }
+		else if (b0 <= 0xEF) { cp = b0 & 0x0F; len = 3; }
+		else if (b0 == 0xF0) { cp = b0 & 0x07; len = 4; lo = 0x90; }
+		else if (b0 <= 0xF3) { cp = b0 & 0x07; len = 4; }
+		else if (b0 == 0xF4) { cp = b0 & 0x07; len = 4; hi = 0x8F; }
+		else                 { throw std::runtime_error("Invalid UTF-8 byte sequence."); }
+
+		if (i + len > utf8.size())
+			throw std::runtime_error("Truncated UTF-8 byte sequence.");
+
+		for (size_t k = 1; k < len; ++k) {
+			u8 bk  = static_cast<u8>(utf8[i + k]);
+			u8 clo = (k == 1) ? lo : 0x80;
+			u8 chi = (k == 1) ? hi : 0xBF;
+			if (bk < clo || bk > chi)
+				throw std::runtime_error("Invalid UTF-8 continuation byte.");
+			cp = (cp << 6) | (bk & 0x3F);
 		}
-		else if (byte <= 0xBF) {
-			throw std::runtime_error("Invalid UTF-8 byte sequence.");
-		}
-		else if (byte <= 0xDF) {
-			codepoint = byte & 0x1F;
-			codepoint = (codepoint << 6) | (utf8[i + 1] & 0x3F);
-			i += 2;
-		}
-		else if (byte <= 0xEF) {
-			codepoint = byte & 0x0F;
-			codepoint = (codepoint << 12) | ((utf8[i + 1] & 0x3F) << 6) | (utf8[i + 2] & 0x3F);
-			i += 3;
-		}
-		else if (byte <= 0xF7) {
-			codepoint = byte & 0x07;
-			codepoint = (codepoint << 18) | ((utf8[i + 1] & 0x3F) << 12) |
-				((utf8[i + 2] & 0x3F) << 6) | (utf8[i + 3] & 0x3F);
-			i += 4;
-		}
-		else {
-			throw std::runtime_error("Invalid UTF-8 byte sequence.");
-		}
+		i += len;
 
 		if constexpr (N == 0) {
-			result.data.push_back(codepoint);
+			result.data.push_back(cp);
 		}
 		else {
 			if (n >= N)
 				throw std::runtime_error("Input string exceeds fixed-width UCS-4 string size.");
-			result.data[n++] = codepoint;
+			result.data[n++] = cp;
 		}
 	}
 	return result;

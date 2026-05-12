@@ -940,7 +940,7 @@ int
 main()
 {
 	// setlocale(LC_ALL, "");
-	// std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
+	std::cout << "Examples for ncr_numpy " << VERSION << "\n\n";
 
 	example_ndarray();       std::cout << "\n";
 	example_simple_api();    std::cout << "\n";
