@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 
-#define NCR_NUMPY_VERSION 0.6.7
+#define NCR_NUMPY_VERSION 0.6.8
 
 #include <cstring>
 #include <cassert>
@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <string>
 #include <bit>
+#include <stdexcept>
 #include <memory>
 #include <charconv>
 #include <array>
@@ -438,6 +439,7 @@ template <typename T> constexpr size_t enum_count();
 
 namespace ncr {
 
+// safe comparison functions --------------------------------------------------
 
 /*
  * the following avoid having to pull in std's <utility>.
@@ -468,6 +470,62 @@ constexpr bool
 cmp_greater_equal(T t, U u) noexcept
 {
 	return !cmp_less(t, u);
+}
+
+
+// overflow related functions -------------------------------------------------
+
+/*
+ * mul_overflow - multiply two numbers, returns true if an overflow would happen
+ */
+template <typename T>
+constexpr bool
+mul_overflow(T a, T b, T& result)
+{
+#if defined(__GNUC__) || defined(__clang__)
+	return __builtin_mul_overflow(a, b, &result);
+#else
+	// Fallback using std::numeric_limits
+	if (a > 0) {
+		if (b > 0)
+			if (a > (std::numeric_limits<T>::max() / b)) return true;
+		else
+			if (b < (std::numeric_limits<T>::min() / a)) return true;
+	}
+	else {
+		if (b > 0)
+			if (a < (std::numeric_limits<T>::min() / b)) return true;
+		else
+			if (a != 0 && b < (std::numeric_limits<T>::max() / a)) return true;
+	}
+	result = a * b;
+	return false;
+#endif
+}
+
+
+template <typename T>
+constexpr bool
+add_overflow(T a, T b, T& result) {
+#if defined(__GNUC__) || defined(__clang__)
+	// Works for both signed and unsigned
+	return __builtin_add_overflow(a, b, &result);
+#else
+	if constexpr (std::is_unsigned_v<T>) {
+		// Unsigned check: if the sum is smaller than either operand, it wrapped.
+		result = a + b;
+		return result < a;
+	}
+	else {
+		// Signed check: Overflow only happens if signs are the same
+		if ((b > 0 && a > (std::numeric_limits<T>::max() - b)) ||
+			(b < 0 && a < (std::numeric_limits<T>::min() - b))) {
+			return true;
+		}
+		result = a + b;
+		return false;
+	}
+#endif
 }
 
 
@@ -1558,6 +1616,7 @@ namespace ncr { namespace numpy {
     _(error_invalid_value                    , 1ul << 43)                     \
     _(error_index_out_of_bounds              , 1ul << 44)                     \
     _(error_index_shape_mismatch             , 1ul << 45)                     \
+	_(error_size_overflow                    , 1ul << 46)                     \
 
 #define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
 	NAME = VALUE,
@@ -1594,6 +1653,18 @@ inline bool
 is_error(result r)
 {
 	return (to_underlying(r) & ~warning_mask) != 0;
+}
+
+/*
+* Helper to handle the "throw or set" logic used in get
+*/
+inline void
+report_error(result code, result* out_err, const char* msg)
+{
+	if (out_err)
+		*out_err = code;
+	else
+		throw std::out_of_range(msg);
 }
 
 
@@ -1943,6 +2014,8 @@ struct npybuffer
  *       (see e.g. ndarray.value)
  * TODO: combine ndarray_item with ndarray_t::proxy if possible (and sensible)
  * TODO: broadcasting / ellipsis
+ * TODO: set an error code if things go wrong instead of having to pass in an
+ *       error return variable
  */
 #ifndef _719685da6c474222b60a9d28795719db_
 #define _719685da6c474222b60a9d28795719db_
@@ -1950,7 +2023,6 @@ struct npybuffer
 
 
 namespace ncr { namespace numpy {
-
 
 
 /*
@@ -2307,18 +2379,6 @@ struct ndarray
 		return result::ok;
 	}
 
-	/*
-	 * Helper to handle the "throw or set" logic used in get
-	 */
-	void _report_error(result code, result* out_err, const char* msg) {
-    	if (out_err) {
-        	*out_err = code;
-    	} else {
-        	throw std::out_of_range(msg);
-    	}
-	}
-
-
 
 	/*
 	 * get - get the u8 span/subrange in the data buffer for an element.
@@ -2668,7 +2728,7 @@ private:
 
 		// Number of indices must match number of dimensions.
 		if (_shape.size() != sizeof...(Indexes)) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
+			report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
 			return u8_span();
 		}
 
@@ -2698,7 +2758,7 @@ private:
 			(process(index, _shape[i], _strides[i]), ..., i++);
 
 			if (status != result::ok) {
-            	_report_error(status, err, "ndarray: index out of bounds");
+            	report_error(status, err, "ndarray: index out of bounds");
             	return u8_span();
         	}
 			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
@@ -2714,7 +2774,7 @@ private:
 			*err = result::ok;
 
 		if (indexes.size() != _shape.size()) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
+			report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
 			return u8_span();
 		}
 
@@ -2725,7 +2785,7 @@ private:
 				size_t actual_idx = 0;
 				result status = normalize_index(indexes[i], _shape[i], actual_idx);
 				if (status != result::ok) {
-					_report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
+					report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
 					return u8_span();
 				}
 
@@ -2755,13 +2815,20 @@ private:
 	 * _compute_size - compute the number of elements in the array
 	 */
 	void
-	_compute_size()
+	_compute_size(result *err = nullptr)
 	{
 		// TODO: verify that dtype.item_size and computed _size match
 		if (_shape.size() > 0) {
 			u64 prod = 1;
-			for (auto &s: _shape)
-				prod *= s;
+			for (auto &s: _shape) {
+				u64 tmp = 0;
+				if (mul_overflow(prod, s, tmp)) {
+					report_error(result::error_size_overflow, err, "Overflow detected when computing size");
+					_size = 0;
+					return;
+				}
+				prod = tmp;
+			}
 			_size = prod;
 		}
 		else {
@@ -2787,14 +2854,20 @@ private:
 	// Note that this should only be called in the constructor after setting
 	// _dtype and _shape and after a call of _compute_size
 	void
-	_resize()
+	_resize(result *err = nullptr)
 	{
 		// TODO: determine if _release_buffer should be called or not
 		_release_buffer();
 
 		if (!_size)
 			return;
-		_alloc_buffer(_size * _dtype.item_size);
+
+		size_t new_size = 0;
+		if (mul_overflow(_size, _dtype.item_size, new_size)) {
+			report_error(result::error_size_overflow, err, "Overflow detected when resizing / allocating buffers");
+			return;
+		}
+		_alloc_buffer(new_size);
 	}
 
 
@@ -5425,7 +5498,11 @@ compute_item_size(dtype &dt, u64 offset = 0)
 			result res;
 			if ((res = compute_item_size(field, dt.offset + subsize)) != result::ok)
 				return res;
-			subsize += field.item_size;
+
+			u64 tmp = 0;
+			if (add_overflow(subsize, field.item_size, tmp))
+				return result::error_size_overflow;
+			subsize = tmp;
 		}
 		if (dt.item_size != 0 && dt.item_size != subsize)
 			return result::error_item_size_mismatch;
@@ -5870,7 +5947,7 @@ from_npy_callback(std::filesystem::path filepath,
 	u64_vector    shape;
 	storage_order order;
 	auto source = ifstream_reader(file);
-	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) 
+	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res)))
 		return res;
 	if constexpr (ArrayPropertiesCallback<G>) {
 		bool cb_result = array_properties_callback(dt, shape, order);
@@ -5887,7 +5964,7 @@ from_npy_callback(std::filesystem::path filepath,
 		return res;
 	}
 	size_t items_per_chunk = npy_callback_chunk_target_bytes / item_size;
-	if (items_per_chunk == 0) 
+	if (items_per_chunk == 0)
 		items_per_chunk = 1;
 	const size_t chunk_bytes = items_per_chunk * item_size;
 	u8_vector chunk(chunk_bytes, 0);

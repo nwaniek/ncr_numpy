@@ -21,6 +21,8 @@
  *       (see e.g. ndarray.value)
  * TODO: combine ndarray_item with ndarray_t::proxy if possible (and sensible)
  * TODO: broadcasting / ellipsis
+ * TODO: set an error code if things go wrong instead of having to pass in an
+ *       error return variable
  */
 #ifndef _719685da6c474222b60a9d28795719db_
 #define _719685da6c474222b60a9d28795719db_
@@ -41,7 +43,6 @@
 #include "ncr/npybuffers.hpp"
 
 namespace ncr { namespace numpy {
-
 
 
 /*
@@ -398,18 +399,6 @@ struct ndarray
 		return result::ok;
 	}
 
-	/*
-	 * Helper to handle the "throw or set" logic used in get
-	 */
-	void _report_error(result code, result* out_err, const char* msg) {
-    	if (out_err) {
-        	*out_err = code;
-    	} else {
-        	throw std::out_of_range(msg);
-    	}
-	}
-
-
 
 	/*
 	 * get - get the u8 span/subrange in the data buffer for an element.
@@ -759,7 +748,7 @@ private:
 
 		// Number of indices must match number of dimensions.
 		if (_shape.size() != sizeof...(Indexes)) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
+			report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
 			return u8_span();
 		}
 
@@ -789,7 +778,7 @@ private:
 			(process(index, _shape[i], _strides[i]), ..., i++);
 
 			if (status != result::ok) {
-            	_report_error(status, err, "ndarray: index out of bounds");
+            	report_error(status, err, "ndarray: index out of bounds");
             	return u8_span();
         	}
 			return u8_span(_data_ptr + _dtype.item_size * offset, _dtype.item_size);
@@ -805,7 +794,7 @@ private:
 			*err = result::ok;
 
 		if (indexes.size() != _shape.size()) {
-			_report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
+			report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
 			return u8_span();
 		}
 
@@ -816,7 +805,7 @@ private:
 				size_t actual_idx = 0;
 				result status = normalize_index(indexes[i], _shape[i], actual_idx);
 				if (status != result::ok) {
-					_report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
+					report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
 					return u8_span();
 				}
 
@@ -846,13 +835,20 @@ private:
 	 * _compute_size - compute the number of elements in the array
 	 */
 	void
-	_compute_size()
+	_compute_size(result *err = nullptr)
 	{
 		// TODO: verify that dtype.item_size and computed _size match
 		if (_shape.size() > 0) {
 			u64 prod = 1;
-			for (auto &s: _shape)
-				prod *= s;
+			for (auto &s: _shape) {
+				u64 tmp = 0;
+				if (mul_overflow(prod, s, tmp)) {
+					report_error(result::error_size_overflow, err, "Overflow detected when computing size");
+					_size = 0;
+					return;
+				}
+				prod = tmp;
+			}
 			_size = prod;
 		}
 		else {
@@ -878,14 +874,20 @@ private:
 	// Note that this should only be called in the constructor after setting
 	// _dtype and _shape and after a call of _compute_size
 	void
-	_resize()
+	_resize(result *err = nullptr)
 	{
 		// TODO: determine if _release_buffer should be called or not
 		_release_buffer();
 
 		if (!_size)
 			return;
-		_alloc_buffer(_size * _dtype.item_size);
+
+		size_t new_size = 0;
+		if (mul_overflow(_size, _dtype.item_size, new_size)) {
+			report_error(result::error_size_overflow, err, "Overflow detected when resizing / allocating buffers");
+			return;
+		}
+		_alloc_buffer(new_size);
 	}
 
 

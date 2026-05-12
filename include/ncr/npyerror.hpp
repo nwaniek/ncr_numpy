@@ -10,6 +10,7 @@
 #ifndef _8c9e4fd8e3de4665b327b3e0a6481c9f_
 #define _8c9e4fd8e3de4665b327b3e0a6481c9f_
 
+#include <stdexcept>
 #include "ncr/utility.hpp"
 
 namespace ncr { namespace numpy {
@@ -72,6 +73,7 @@ namespace ncr { namespace numpy {
     _(error_invalid_value                    , 1ul << 43)                     \
     _(error_index_out_of_bounds              , 1ul << 44)                     \
     _(error_index_shape_mismatch             , 1ul << 45)                     \
+	_(error_size_overflow                    , 1ul << 46)                     \
 
 #define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
 	NAME = VALUE,
@@ -108,6 +110,18 @@ inline bool
 is_error(result r)
 {
 	return (to_underlying(r) & ~warning_mask) != 0;
+}
+
+/*
+* Helper to handle the "throw or set" logic used in get
+*/
+inline void
+report_error(result code, result* out_err, const char* msg)
+{
+	if (out_err)
+		*out_err = code;
+	else
+		throw std::out_of_range(msg);
 }
 
 

@@ -820,7 +820,11 @@ compute_item_size(dtype &dt, u64 offset = 0)
 			result res;
 			if ((res = compute_item_size(field, dt.offset + subsize)) != result::ok)
 				return res;
-			subsize += field.item_size;
+
+			u64 tmp = 0;
+			if (add_overflow(subsize, field.item_size, tmp))
+				return result::error_size_overflow;
+			subsize = tmp;
 		}
 		if (dt.item_size != 0 && dt.item_size != subsize)
 			return result::error_item_size_mismatch;
@@ -1265,7 +1269,7 @@ from_npy_callback(std::filesystem::path filepath,
 	u64_vector    shape;
 	storage_order order;
 	auto source = ifstream_reader(file);
-	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res))) 
+	if ((res = process_file_header(source, *npy_ptr, dt, shape, order), is_error(res)))
 		return res;
 	if constexpr (ArrayPropertiesCallback<G>) {
 		bool cb_result = array_properties_callback(dt, shape, order);
@@ -1282,7 +1286,7 @@ from_npy_callback(std::filesystem::path filepath,
 		return res;
 	}
 	size_t items_per_chunk = npy_callback_chunk_target_bytes / item_size;
-	if (items_per_chunk == 0) 
+	if (items_per_chunk == 0)
 		items_per_chunk = 1;
 	const size_t chunk_bytes = items_per_chunk * item_size;
 	u8_vector chunk(chunk_bytes, 0);

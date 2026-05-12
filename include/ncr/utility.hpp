@@ -190,6 +190,7 @@ template <typename T> constexpr size_t enum_count();
 
 namespace ncr {
 
+// safe comparison functions --------------------------------------------------
 
 /*
  * the following avoid having to pull in std's <utility>.
@@ -220,6 +221,62 @@ constexpr bool
 cmp_greater_equal(T t, U u) noexcept
 {
 	return !cmp_less(t, u);
+}
+
+
+// overflow related functions -------------------------------------------------
+
+/*
+ * mul_overflow - multiply two numbers, returns true if an overflow would happen
+ */
+template <typename T>
+constexpr bool
+mul_overflow(T a, T b, T& result)
+{
+#if defined(__GNUC__) || defined(__clang__)
+	return __builtin_mul_overflow(a, b, &result);
+#else
+	// Fallback using std::numeric_limits
+	if (a > 0) {
+		if (b > 0)
+			if (a > (std::numeric_limits<T>::max() / b)) return true;
+		else
+			if (b < (std::numeric_limits<T>::min() / a)) return true;
+	}
+	else {
+		if (b > 0)
+			if (a < (std::numeric_limits<T>::min() / b)) return true;
+		else
+			if (a != 0 && b < (std::numeric_limits<T>::max() / a)) return true;
+	}
+	result = a * b;
+	return false;
+#endif
+}
+
+
+template <typename T>
+constexpr bool
+add_overflow(T a, T b, T& result) {
+#if defined(__GNUC__) || defined(__clang__)
+	// Works for both signed and unsigned
+	return __builtin_add_overflow(a, b, &result);
+#else
+	if constexpr (std::is_unsigned_v<T>) {
+		// Unsigned check: if the sum is smaller than either operand, it wrapped.
+		result = a + b;
+		return result < a;
+	}
+	else {
+		// Signed check: Overflow only happens if signs are the same
+		if ((b > 0 && a > (std::numeric_limits<T>::max() - b)) ||
+			(b < 0 && a < (std::numeric_limits<T>::min() - b))) {
+			return true;
+		}
+		result = a + b;
+		return false;
+	}
+#endif
 }
 
 
