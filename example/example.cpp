@@ -143,28 +143,28 @@ example_simple_api(size_t padwidth = 30)
 
 	auto res = numpy::load("assets/in/simple.npy", arr);
 	std::cout << std::boolalpha << "\n";
-	std::cout << strpad("simple.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("simple.npy:", padwidth) << res.to_string() << "\n";
 	print_tensor<i64>(arr, "  ");
 	std::cout << "\n\n";
 	numpy::release(arr);
 
 
 	res = numpy::load("assets/in/simpletensor1.npy", arr);
-	std::cout << strpad("simpletensor1.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("simpletensor1.npy:", padwidth) << res.to_string() << "\n";
 	print_tensor<f64>(arr, "  ");
 	std::cout << "\n\n";
 	numpy::release(arr);
 
 
 	res = numpy::load("assets/in/simpletensor2.npy", arr);
-	std::cout << strpad("simpletensor2.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("simpletensor2.npy:", padwidth) << res.to_string() << "\n";
 	print_tensor<i64>(arr, "  ");
 	std::cout << "\n\n";
 	numpy::release(arr);
 
 
 	res = numpy::load("assets/in/complex.npy", arr);
-	std::cout << strpad("complex.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("complex.npy:", padwidth) << res.to_string() << "\n";
 	// the data in this tensor needs a byteswap because it is stored in
 	// big-endian, while most systems actually are little-endian. We can apply
 	// the transform in the print_tensor function
@@ -191,17 +191,17 @@ example_simple_api(size_t padwidth = 30)
 	numpy::release(arr);
 
 	res = numpy::load("assets/in/structured.npy", arr);
-	std::cout << strpad("structured.npy:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("structured.npy:", padwidth) << res.to_string() << "\n";
 	numpy::release(arr);
 
 	numpy::npzfile npz;
 	res = numpy::loadz("assets/in/multiple_named.npz", npz);
-	std::cout << strpad("multiple_named.npz:", padwidth) << (res == numpy::result::ok) << "\n";
+	std::cout << strpad("multiple_named.npz:", padwidth) << res.to_string() << "\n";
 
 	// try to load a file that does not exist. the variant will contain an
 	// numpy::result with the error code describing what happened.
 	res = numpy::load("assets/in/does_not_exist.npy", arr);
-	if (res != numpy::result::ok) {
+	if (!res.is_ok()) {
 		std::cout << strpad("does_not_exist.npy:", padwidth) << numpy::to_string(res) << "\n";
 	}
 	else
@@ -764,7 +764,7 @@ example_callbacks()
 			// we return true to let the backend know that we want to have more
 			// data
 			return true;
-		})) != numpy::result::ok)
+		})), is_error(res))
 	{
 		std::cout << "Callback Example 1, Error reading file: " << numpy::to_string(res) << "\n";
 	}
@@ -783,7 +783,7 @@ example_callbacks()
 				return false;
 			sum += value;
 			return true;
-		})) != numpy::result::ok)
+		})), is_error(res))
 	{
 		std::cout << "Callback Example 2, Error reading file: " << numpy::to_string(res) << "\n";
 	}
@@ -806,7 +806,7 @@ example_callbacks()
 			std::cout << "Item" << ncr::to_string(index, {.end = "]: "}) << value << "\n";
 			sum += value;
 			return true;
-		})) != numpy::result::ok)
+		})), is_error(res))
 	{
 		std::cout << "Callback Example 3, Error reading file: " << numpy::to_string(res) << "\n";
 	}
@@ -841,7 +841,7 @@ example_callbacks()
 			std::cout << "Item" << ncr::to_string(index, {.end = "]: "}) << value << "\n";
 			sum += value;
 			return true;
-		})) != numpy::result::ok)
+		})), is_error(res))
 	{
 		std::cout << "Callback Example 4, Error reading file: " << numpy::to_string(res) << "\n";
 	}

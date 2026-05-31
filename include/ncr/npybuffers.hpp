@@ -51,11 +51,11 @@ inline result
 open(const char *filepath, mmap_buffer* buf)
 {
 	if (!buf)
-		return result::error_invalid_data_pointer;
+		return {errors::invalid_data_pointer};
 
 	int fd = ::open(filepath, O_RDONLY);
 	if (fd == -1) {
-		return result::error_file_open_failed;
+		return {errors::file_open_failed};
 	}
 
 	buf->size = lseek(fd, 0, SEEK_END);
@@ -70,10 +70,10 @@ open(const char *filepath, mmap_buffer* buf)
 	if (buf->data == MAP_FAILED) {
 		buf->size = 0;
 		buf->data = nullptr;
-		return result::error_mmap_failed;
+		return {errors::mmap_failed};
 	}
 	buf->position = 0;
-	return result::ok;
+	return {};
 }
 
 
@@ -81,15 +81,15 @@ inline result
 close(mmap_buffer* buf)
 {
 	if (!buf)
-		return result::error_invalid_data_pointer;
+		return {errors::invalid_data_pointer};
 
 	if (munmap(buf->data, buf->size) == -1)
-		return result::error_munmap_failed;
+		return {errors::munmap_failed};
 
 	buf->size = 0;
 	buf->data = nullptr;
 	buf->position = 0;
-	return result::ok;
+	return {};
 }
 
 
@@ -97,14 +97,14 @@ inline result
 release(mmap_buffer* buf)
 {
 	if (!buf)
-		return result::error_invalid_data_pointer;
+		return {errors::invalid_data_pointer};
 
 	result res = close(buf);
 	if (is_error(res))
 		return res;
 
 	delete buf;
-	return result::ok;
+	return {};
 }
 
 #endif // NCR_NUMPY_HAS_MMAP
@@ -135,11 +135,11 @@ inline result
 release(raw_buffer* buf)
 {
 	if (!buf)
-		return result::error_invalid_data_pointer;
+		return {errors::invalid_data_pointer};
 
 	delete[] buf->data;
 	delete buf;
-	return result::ok;
+	return {};
 }
 
 
@@ -175,10 +175,10 @@ inline result
 release(vector_buffer* buf)
 {
 	if (!buf)
-		return result::error_invalid_data_pointer;
+		return {errors::invalid_data_pointer};
 
 	delete buf;
-	return result::ok;
+	return {};
 }
 
 
@@ -310,7 +310,7 @@ struct npybuffer
 #endif
 		}
 		// TODO: maybe return something else?
-		return result::ok;
+		return {};
 	}
 };
 

@@ -15,102 +15,210 @@
 
 namespace ncr { namespace numpy {
 
-#define NCR_NUMPY_ERROR_CODE_LIST(_)                                          \
-	_(ok                                     , 0)                             \
+
+#define WARNING_CODE_LIST(_)                                                  \
+	_(none                             , 0)                                   \
 	/* warnings about missing fields. Note that not all fields are required   \
 	 * and it might not be a problem for an application if they are not       \
-	 * present. However, inform the user about this state */                  \
-	_(warning_missing_descr                  , 1ul << 0)                      \
-	_(warning_missing_fortran_order          , 1ul << 1)                      \
-	_(warning_missing_shape                  , 1ul << 2)                      \
+	 * present. However, it might be nice to inform the user if this is the   \
+	 * case. Warnings are OR-able, because there might be multiple warnings   \
+	 * active at the same time */                                             \
+	_(missing_descr                    , 1ul << 0)                            \
+	_(missing_fortran_order            , 1ul << 1)                            \
+	_(missing_shape                    , 1ul << 2)                            \
+
+
+#define ERROR_CODE_LIST(_)                                                    \
+	_(none                             ,   0)                                 \
 	/* error codes. in particular for nested/structured arrays, it might be   \
 	 * helpful to know precisely what went wrong. */                          \
-	_(error_wrong_filetype                   , 1ul << 3)                      \
-	_(error_file_not_found                   , 1ul << 4)                      \
-	_(error_file_exists                      , 1ul << 5)                      \
-	_(error_file_open_failed                 , 1ul << 6)                      \
-	_(error_file_truncated                   , 1ul << 7)                      \
-	_(error_file_write_failed                , 1ul << 8)                      \
-	_(error_file_read_failed                 , 1ul << 9)                      \
-	_(error_file_close                       , 1ul << 10)                     \
-	_(error_unsupported_file_format          , 1ul << 11)                     \
-	_(error_duplicate_array_name             , 1ul << 12)                     \
+	_(wrong_filetype                   , 101)                                 \
+	_(file_not_found                   , 102)                                 \
+	_(file_exists                      , 103)                                 \
+	_(file_open_failed                 , 104)                                 \
+	_(file_truncated                   , 105)                                 \
+	_(file_write_failed                , 106)                                 \
+	_(file_read_failed                 , 107)                                 \
+	_(file_close                       , 108)                                 \
+	_(unsupported_file_format          , 109)                                 \
+	_(duplicate_array_name             , 110)                                 \
 	/* */                                                                     \
-	_(error_magic_string_invalid             , 1ul << 13)                     \
-	_(error_version_not_supported            , 1ul << 14)                     \
-	_(error_header_invalid_length            , 1ul << 15)                     \
-	_(error_header_truncated                 , 1ul << 16)                     \
-	_(error_header_parsing_error             , 1ul << 17)                     \
-	_(error_header_invalid                   , 1ul << 18)                     \
-	_(error_header_empty                     , 1ul << 19)                     \
+	_(magic_string_invalid             , 201)                                 \
+	_(version_not_supported            , 202)                                 \
+	_(header_invalid_length            , 203)                                 \
+	_(header_truncated                 , 204)                                 \
+	_(header_parsing_error             , 205)                                 \
+	_(header_invalid                   , 206)                                 \
+	_(header_empty                     , 207)                                 \
 	/* */                                                                     \
-	_(error_descr_invalid                    , 1ul << 20)                     \
-	_(error_descr_invalid_type               , 1ul << 21)                     \
-	_(error_descr_invalid_string             , 1ul << 22)                     \
-	_(error_descr_invalid_data_size          , 1ul << 23)                     \
-	_(error_descr_list_empty                 , 1ul << 24)                     \
-	_(error_descr_list_invalid_type          , 1ul << 25)                     \
-	_(error_descr_list_incomplete_value      , 1ul << 26)                     \
-	_(error_descr_list_invalid_value         , 1ul << 27)                     \
-	_(error_descr_list_invalid_shape         , 1ul << 28)                     \
-	_(error_descr_list_invalid_shape_value   , 1ul << 29)                     \
-	_(error_descr_list_subtype_not_supported , 1ul << 30)                     \
+	_(descr_invalid                    , 301)                                 \
+	_(descr_invalid_type               , 302)                                 \
+	_(descr_invalid_string             , 303)                                 \
+	_(descr_invalid_data_size          , 304)                                 \
+	_(descr_list_empty                 , 305)                                 \
+	_(descr_list_invalid_type          , 306)                                 \
+	_(descr_list_incomplete_value      , 307)                                 \
+	_(descr_list_invalid_value         , 308)                                 \
+	_(descr_list_invalid_shape         , 309)                                 \
+	_(descr_list_invalid_shape_value   , 310)                                 \
+	_(descr_list_subtype_not_supported , 311)                                 \
 	/* */                                                                     \
-	_(error_fortran_order_invalid_value      , 1ul << 31)                     \
-	_(error_shape_invalid_value              , 1ul << 32)                     \
-	_(error_shape_invalid_shape_value        , 1ul << 33)                     \
-	_(error_item_size_mismatch               , 1ul << 34)                     \
-	_(error_data_size_mismatch               , 1ul << 35)                     \
-	_(error_unavailable                      , 1ul << 36)                     \
-    /* */                                                                     \
-	_(error_mmap_failed                      , 1ul << 37)                     \
-	_(error_seek_failed                      , 1ul << 38)                     \
-	_(error_reader_not_open                  , 1ul << 39)                     \
-	_(error_invalid_item_offset              , 1ul << 40)                     \
-	_(error_invalid_data_pointer             , 1ul << 41)                     \
-	_(error_munmap_failed                    , 1ul << 42)                     \
-    /* used in ndarray */                                                     \
-    _(error_invalid_value                    , 1ul << 43)                     \
-    _(error_index_out_of_bounds              , 1ul << 44)                     \
-    _(error_index_shape_mismatch             , 1ul << 45)                     \
-	_(error_size_overflow                    , 1ul << 46)                     \
+	_(fortran_order_invalid_value      , 401)                                 \
+	_(shape_invalid_value              , 402)                                 \
+	_(shape_invalid_shape_value        , 403)                                 \
+	_(item_size_mismatch               , 404)                                 \
+	_(data_size_mismatch               , 405)                                 \
+	_(unavailable                      , 406)                                 \
+	/* */                                                                     \
+	_(mmap_failed                      , 501)                                 \
+	_(seek_failed                      , 502)                                 \
+	_(reader_not_open                  , 503)                                 \
+	_(invalid_item_offset              , 504)                                 \
+	_(invalid_data_pointer             , 505)                                 \
+	_(munmap_failed                    , 506)                                 \
+	/* used in ndarray */                                                     \
+	_(invalid_value                    , 601)                                 \
+	_(index_out_of_bounds              , 602)                                 \
+	_(index_shape_mismatch             , 603)                                 \
+	_(size_overflow                    , 604)                                 \
 
-#define NCR_NUMPY_ERROR_CODE_ENUM_ENTRY(NAME, VALUE) \
-	NAME = VALUE,
 
-#define NCR_NUMPY_ERROR_CODE_STRINGIFY(NAME, VALUE) \
-	{result::NAME, #NAME},
+#define WARNING_CODE_STRINGIFY(NAME, VALUE)  \
+	{warnings::NAME, #NAME},
 
-// need to bring enum_count into this namespace for the MACRO to work (TODO:
-// fix this)
+#define ERROR_CODE_STRINGIFY(NAME, VALUE)  \
+	{errors::NAME, #NAME},
+
+
+// need to bring enum_count into this namespace for the MACRO to work (TODO: fix this)
 template <typename T> constexpr size_t enum_count();
-NCR_NODISCARD_ENUM_CLASS(result, u64, NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_ENUM_ENTRY))
 
-NCR_DEFINE_ENUM_FLAG_OPERATORS(result);
+/*
+ * declare enums `warnings` and `errors`, and enable boolean operatores on
+ * `warnings`.
+ */
+NCR_NODISCARD_ENUM_CLASS(warnings, u16, WARNING_CODE_LIST)
+NCR_NODISCARD_ENUM_CLASS(errors,   u16, ERROR_CODE_LIST)
+NCR_DEFINE_ENUM_FLAG_OPERATORS(warnings)
 
-// map from error code to string for pretty printing the error code. This is a
-// bit more involved than just listing the strings, because result codes can be
-// OR-ed together, i.e. a result code might have several codes that are set.
-constexpr inline std::array<std::pair<result, const char*>, enum_count<result>()>
-result_strings = {{
-	NCR_NUMPY_ERROR_CODE_LIST(NCR_NUMPY_ERROR_CODE_STRINGIFY)
+
+constexpr inline std::array<std::pair<warnings, const char*>, enum_count<warnings>()>
+warning_strings = {{
+	WARNING_CODE_LIST(WARNING_CODE_STRINGIFY)
 }};
 
-// mask of all warning bits. New warnings should be added to bits below this
-// constant; the corresponding NCR_NUMPY_ERROR_CODE_LIST entries already
-// place the warnings at the lowest bits, so a single masking step
-// distinguishes warnings from real errors.
-inline constexpr u64 warning_mask =
-	to_underlying(result::warning_missing_descr)         |
-	to_underlying(result::warning_missing_fortran_order) |
-	to_underlying(result::warning_missing_shape);
+
+constexpr inline std::array<std::pair<errors, const char*>, enum_count<errors>()>
+error_strings = {{
+	ERROR_CODE_LIST(ERROR_CODE_STRINGIFY)
+}};
 
 
-inline bool
-is_error(result r)
+struct result
 {
-	return (to_underlying(r) & ~warning_mask) != 0;
+	warnings warn = warnings::none;
+	errors   err  = errors::none;
+
+	// Default constructor (uses the default member initializers above)
+	constexpr result() = default;
+
+	// Allow direct initialization from just an error
+	constexpr result(errors e) : warn(warnings::none), err(e) {}
+
+	// Allow direct initialization from just a warning
+	constexpr result(warnings w) : warn(w), err(errors::none) {}
+
+	// Allow initialization from both
+	constexpr result(warnings w, errors e) : warn(w), err(e) {}
+
+	inline bool is_ok()       { return ncr::to_underlying(this->err) == 0; }
+	inline bool has_error()   { return !is_ok(); }
+	inline bool has_warning() { return ncr::to_underlying(this->warn) > 0; }
+
+	/*
+ 	 * to_string - returns a string representation of a result.
+ 	 *
+ 	 * Note that a result might contain not only a single warning code, but several codes
+ 	 * that are set (technically by OR-ing them). As such, this function returns a
+ 	 * string which will contain all string representations for all warning codes,
+ 	 * concatenated by " | ", and if there's an error code, the error code as well.
+ 	 * An example might look like:
+ 	 *     missing_descr | missing_shape, file_truncated
+ 	 * which indicates two warnings and one error. A pristine result, i.e. no error
+ 	 * and no warning is set, the function returns with a simple "none, none" string,
+ 	 * while if there is one or the other set (i.e. some warning or some error),
+ 	 * then the good part contains 'none', e.g.
+ 	 *     missing_descr | missing_shape, none
+ 	 * or
+ 	 *     none, file_not_found
+ 	 */
+	inline std::string
+	to_string()
+	{
+		std::ostringstream oss;
+
+		// build warning part
+		if (!this->has_warning())
+			oss << "none";
+		else {
+			bool first = true;
+			for (size_t i = 0; i < warning_strings.size(); ++i) {
+				const auto& [enum_val, str] = warning_strings[i];
+				if (str == nullptr || enum_val == warnings::none) continue;
+				if ((this->warn & enum_val) != enum_val)
+					continue;
+				if (!first)
+					oss << " | ";
+				oss << str;
+				first = false;
+			}
+		}
+
+		// build error part
+		oss << ", ";
+		if (!this->has_error())
+			oss << "none";
+		else {
+			for (size_t i = 0; i < error_strings.size(); ++i) {
+				const auto& [enum_val, str] = error_strings[i];
+				if (str == nullptr || enum_val == errors::none) continue;
+				if (this->err == enum_val) {
+					oss << str;
+					break;
+				}
+			}
+		}
+
+		return oss.str();
+	}
+
+};
+
+
+/*
+ * TODO: for now, have an operator| for result so that we can OR warning
+ * flags. this isn't so great and should probably be removed in the future
+ */
+inline result&
+operator|=(result& lhs, const result& rhs)
+{
+	// Accumulate warnings using their underlying type values
+	lhs.warn = static_cast<warnings>(
+		ncr::to_underlying(lhs.warn) | ncr::to_underlying(rhs.warn)
+	);
+
+	// Propagate the error if the incoming result has one
+	if (rhs.err != errors::none)
+		lhs.err = rhs.err;
+
+	return lhs;
 }
+
+
+inline bool        is_error(result r)    { return r.has_error(); }
+inline bool        has_warning(result r) { return r.has_warning(); }
+inline std::string to_string(result res) { return res.to_string(); }
+
 
 /*
 * Helper to handle the "throw or set" logic used in get

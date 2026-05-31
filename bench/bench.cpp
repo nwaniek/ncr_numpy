@@ -194,7 +194,7 @@ ensure_fixtures(const fs::path &dir)
 		for (auto &a : arrs)
 			numpy::release(a);
 
-		if (res != numpy::result::ok) {
+		if (!res.is_ok()) {
 			std::cerr << "  savez failed: " << numpy::to_string(res) << "\n";
 			return false;
 		}
@@ -276,7 +276,7 @@ bench_load_big_f32(const fs::path &path)
 		auto t0 = clk::now();
 		std::ifstream f;
 		auto res = numpy::open_npy(path, f);
-		if (res != numpy::result::ok) {
+		if (!res.is_ok()) {
 			std::cout << "  open failed\n";
 			return;
 		}
@@ -306,7 +306,7 @@ bench_load_big_f32(const fs::path &path)
 		auto t1 = clk::now();
 		double s = std::chrono::duration<double>(t1 - t0).count();
 		print_timing("from_npy (mmap, no touch)", s, file_bytes);
-		if (res != numpy::result::ok) {
+		if (!res.is_ok()) {
 			std::cout << "  load failed\n";
 			return;
 		}
@@ -346,7 +346,7 @@ bench_bswap(const fs::path &path)
 	// NCR_NUMPY_NO_MMAP_LOAD is set).
 	numpy::ndarray arr;
 	auto res = numpy::from_npy(path, arr);
-	if (res != numpy::result::ok) {
+	if (!res.is_ok()) {
 		std::cout << "  load failed: " << numpy::to_string(res) << "\n";
 		return;
 	}
@@ -486,7 +486,7 @@ bench_npz(const fs::path &path)
 		auto t1 = clk::now();
 		double s = std::chrono::duration<double>(t1 - t0).count();
 		print_timing(std::string("loadz, ") + std::to_string(npz.names.size()) + " arrays", s, file_bytes);
-		if (res != numpy::result::ok)
+		if (!res.is_ok())
 			std::cout << "  load result: " << numpy::to_string(res) << "\n";
 		numpy::release(npz);
 	}

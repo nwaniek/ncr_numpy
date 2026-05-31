@@ -138,6 +138,15 @@
 #define NCR_UNUSED(...)               NCR_UNUSED_INDIRECT2(NCR_COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
 
+/*
+ * defaults for DECL_ENTRY and COUNT_ENTRY used in non-EX variants to declare
+ * enums.
+ */
+#define NCR_ENUM_DEFAULT_DECL_ENTRY(NAME, VALUE)  \
+	NAME = VALUE,
+
+#define NCR_ENUM_DEFAULT_COUNT_ENTRY(NAME, VALUE) \
+	+1
 
 /*
  * macro to define an enum class of a specific underlying type, and also
@@ -146,21 +155,30 @@
  */
 template <typename T> constexpr size_t enum_count();
 
-#define NCR_ENUM_CLASS(EnumName, UnderlyingType, ...) \
-	enum class EnumName : UnderlyingType { \
-		__VA_ARGS__ \
+#define NCR_ENUM_CLASS(EnumName, UnderlyingType, LIST_MACRO) \
+	NCR_ENUM_CLASS_EX(EnumName, UnderlyingType, LIST_MACRO, \
+		NCR_ENUM_DEFAULT_DECL_ENTRY, NCR_ENUM_DEFAULT_COUNT_ENTRY)
+
+#define NCR_ENUM_CLASS_EX(EnumName, UnderlyingType, LIST_MACRO, DECL_ENTRY, COUNT_ENTRY) \
+	enum class [[nodiscard]] EnumName : UnderlyingType { \
+		LIST_MACRO(DECL_ENTRY) \
 	}; \
-	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
+	template<> constexpr size_t enum_count<EnumName>() { return 0 LIST_MACRO(COUNT_ENTRY); }
+
 
 /*
  * like NCR_ENUM_CLASS, but tags the enum with [[nodiscard]] so the compiler
  * warns when a return value is dropped. Use for error/result enums.
  */
-#define NCR_NODISCARD_ENUM_CLASS(EnumName, UnderlyingType, ...) \
+#define NCR_NODISCARD_ENUM_CLASS(EnumName, UnderlyingType, LIST_MACRO) \
+	NCR_NODISCARD_ENUM_CLASS_EX(EnumName, UnderlyingType, LIST_MACRO, \
+		NCR_ENUM_DEFAULT_DECL_ENTRY, NCR_ENUM_DEFAULT_COUNT_ENTRY)
+
+#define NCR_NODISCARD_ENUM_CLASS_EX(EnumName, UnderlyingType, LIST_MACRO, DECL_ENTRY, COUNT_ENTRY) \
 	enum class [[nodiscard]] EnumName : UnderlyingType { \
-		__VA_ARGS__ \
+		LIST_MACRO(DECL_ENTRY) \
 	}; \
-	template<> constexpr size_t enum_count<EnumName>() { return NCR_COUNT_ARGS(__VA_ARGS__); }
+	template<> constexpr size_t enum_count<EnumName>() { return 0 LIST_MACRO(COUNT_ENTRY); }
 
 
 /*

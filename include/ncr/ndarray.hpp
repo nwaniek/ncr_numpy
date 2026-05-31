@@ -380,23 +380,23 @@ struct ndarray
 				auto adjusted = static_cast<std::ptrdiff_t>(index)
 				              + static_cast<std::ptrdiff_t>(shape_dim);
 				if (adjusted < 0) {
-					return result::error_index_out_of_bounds;
+					return {errors::index_out_of_bounds};
 					// throw std::out_of_range("ndarray: index out of bounds");
 				}
 				actual = static_cast<std::size_t>(adjusted);
-				return result::ok;
+				return {};
 			}
 		}
 
 		// cmp_greater_equal handles the signed/unsigned mismatch without the
 		// usual integer-promotion footguns.
 		if (ncr::cmp_greater_equal(index, shape_dim)) {
-			return result::error_index_out_of_bounds;
+			return {errors::index_out_of_bounds};
 			// throw std::out_of_range("ndarray: index out of bounds");
 		}
 
 		actual = static_cast<std::size_t>(index);
-		return result::ok;
+		return {};
 	}
 
 
@@ -649,7 +649,7 @@ struct ndarray
 	{
 		size_t n_elems = (length * ...);
 		if (n_elems != _size)
-			return result::error_invalid_value;
+			return {errors::invalid_value};
 
 		// set the shape
 		_shape.resize(sizeof...(Lengths));
@@ -658,7 +658,7 @@ struct ndarray
 
 		// re-compute strides
 		_compute_strides();
-		return result::ok;
+		return {};
 	}
 
 
@@ -744,11 +744,11 @@ private:
 	{
 		static_assert((std::is_integral_v<Indexes> && ...), "All indices must be integers.");
 		if (err)
-			*err = result::ok;
+			*err = {};
 
 		// Number of indices must match number of dimensions.
 		if (_shape.size() != sizeof...(Indexes)) {
-			report_error(result::error_index_shape_mismatch, err, "ndarray::get: mismatch between number of indices and array shape");
+			report_error({errors::index_shape_mismatch}, err, "ndarray::get: mismatch between number of indices and array shape");
 			return u8_span();
 		}
 
@@ -760,24 +760,24 @@ private:
 			// below when extracting u8_subrange
 			size_t i = 0;
 			size_t offset = 0;
-			result status = result::ok;
+			result status = {};
 
 			// Use a lambda inside the fold to stop processing if an error occurs
 			auto process = [&](auto idx, size_t dim_size, size_t stride) {
-				if (status != result::ok)
+				if (!status.is_ok())
 					return; // Short circuita
 
 				size_t actual_idx = 0;
 				status = normalize_index(idx, dim_size, actual_idx);
 
-				if (status == result::ok)
+				if (!status.is_ok())
 					offset += actual_idx * stride;
 			};
 
 			// fold expression to process each index
 			(process(index, _shape[i], _strides[i]), ..., i++);
 
-			if (status != result::ok) {
+			if (!status.is_ok()) {
             	report_error(status, err, "ndarray: index out of bounds");
             	return u8_span();
         	}
@@ -791,10 +791,10 @@ private:
 	_get(result *err, u64_vector indexes)
 	{
 		if (err)
-			*err = result::ok;
+			*err = {};
 
 		if (indexes.size() != _shape.size()) {
-			report_error(result::error_index_shape_mismatch, err, "ndarray::get: number of indices does not match array shape");
+			report_error({errors::index_shape_mismatch}, err, "ndarray::get: number of indices does not match array shape");
 			return u8_span();
 		}
 
@@ -804,8 +804,8 @@ private:
 
 				size_t actual_idx = 0;
 				result status = normalize_index(indexes[i], _shape[i], actual_idx);
-				if (status != result::ok) {
-					report_error(result::error_index_out_of_bounds, err, "Index out of bounds\n");
+				if (!status.is_ok()) {
+					report_error({errors::index_out_of_bounds}, err, "Index out of bounds\n");
 					return u8_span();
 				}
 
@@ -843,7 +843,7 @@ private:
 			for (auto &s: _shape) {
 				u64 tmp = 0;
 				if (mul_overflow(prod, s, tmp)) {
-					report_error(result::error_size_overflow, err, "Overflow detected when computing size");
+					report_error({errors::size_overflow}, err, "Overflow detected when computing size");
 					_size = 0;
 					return;
 				}
@@ -884,7 +884,7 @@ private:
 
 		size_t new_size = 0;
 		if (mul_overflow(_size, _dtype.item_size, new_size)) {
-			report_error(result::error_size_overflow, err, "Overflow detected when resizing / allocating buffers");
+			report_error({errors::size_overflow}, err, "Overflow detected when resizing / allocating buffers");
 			return;
 		}
 		_alloc_buffer(new_size);

@@ -301,37 +301,6 @@ release(npzfile &npz)
 }
 
 
-
-/*
- * to_string - returns a string representation of a result code
- *
- * Note that a result might contain not only a single code, but several codes
- * that are set (technically by OR-ing them). As such, this function returns a
- * string which will contain all string representations for all codes,
- * concatenated by " | ".
- */
-inline
-std::string
-to_string(result res)
-{
-	if (res == result::ok)
-		return result_strings[0].second;
-
-	std::ostringstream oss;
-	bool first = true;
-	for (size_t i = 1; i < result_strings.size(); ++i) {
-		const auto& [enum_val, str] = result_strings[i];
-		if ((res & enum_val) != enum_val)
-			continue;
-		if (!first)
-			oss << " | ";
-		oss << str;
-		first = false;
-	}
-	return oss.str();
-}
-
-
 /*
  * buffer_read - wrapper for vectors/buffers to make them a ReadableSource
  */
@@ -484,12 +453,12 @@ read_magic_string(Reader &source, npyfile &npy)
 {
 	constexpr u8 magic[] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
 	if (source.read(npy.magic, npyfile::magic_byte_count) != npyfile::magic_byte_count)
-		return result::error_magic_string_invalid;
+		return {errors::magic_string_invalid};
 
 	if (!std::equal(npy.magic, npy.magic + npyfile::magic_byte_count, magic))
-		return result::error_magic_string_invalid;
+		return {errors::magic_string_invalid};
 
-	return result::ok;
+	return {};
 }
 
 
@@ -501,11 +470,11 @@ result
 read_version(Reader &source, npyfile &npy)
 {
 	if (source.read(npy.version, npyfile::version_byte_count) != npyfile::version_byte_count)
-		return result::error_file_truncated;
+		return {errors::file_truncated};
 
 	// currently, only 1.0 and 2.0 are supported
 	if ((npy.version[0] != 0x01 && npy.version[0] != 0x02) || (npy.version[1] != 0x00))
-		return result::error_version_not_supported;
+		return {errors::version_not_supported};
 
 	// set the size byte count, which depends on the version
 	if (npy.version[0] == 0x01)
@@ -513,7 +482,7 @@ read_version(Reader &source, npyfile &npy)
 	else
 		npy.header_size_byte_count = 4;
 
-	return result::ok;
+	return {};
 }
 
 
@@ -531,7 +500,7 @@ read_header_length(Reader &source, npyfile &npy)
 	size_t i = 0;
 	while (i < npy.header_size_byte_count) {
 		if (source.read(&elem, 1) != 1)
-			return result::error_file_truncated;
+			return {errors::file_truncated};
 		npy.header_size |= static_cast<size_t>(elem) << (i * 8);
 		++i;
 	}
@@ -549,9 +518,9 @@ read_header_length(Reader &source, npyfile &npy)
 	// validate the length: len(magic string) + 2 + len(length) + HEADER_LEN must be divisible by 64
 	npy.data_offset = npyfile::magic_byte_count + npy.version_byte_count + npy.header_size_byte_count + npy.header_size;
 	if (npy.data_offset % 64 != 0)
-		return result::error_header_invalid_length;
+		return {errors::header_invalid_length};
 
-	return result::ok;
+	return {};
 }
 
 
@@ -564,10 +533,10 @@ read_header(Reader &source, npyfile &npy)
 {
 	npy.header.resize(npy.header_size);
 	if (source.read(npy.header, npy.header_size) != npy.header_size)
-		return result::error_file_truncated;
+		return {errors::file_truncated};
 	if (npy.header.size() < npy.header_size)
-		return result::error_header_truncated;
-	return result::ok;
+		return {errors::header_truncated};
+	return {};
 }
 
 
@@ -579,10 +548,10 @@ parse_descr_string(PyParser::ParseResult *descr, dtype &dt)
 {
 	// sanity check: test if the data type is actually a string or not
 	if (descr->dtype != PyParser::Type::String)
-		return result::error_descr_invalid_string;
+		return {errors::descr_invalid_string};
 
 	if (std::distance(descr->begin, descr->end) < 3)
-		return result::error_descr_invalid_string;
+		return {errors::descr_invalid_string};
 
 	// first character is the byte order
 	dt.endianness = to_byte_order(descr->begin[0]);
@@ -595,9 +564,9 @@ parse_descr_string(PyParser::ParseResult *descr, dtype &dt)
 	auto [ptr, ec] = std::from_chars(b, e, dt.size);
 	if (ec != std::errc{} || ptr != e) {
 		dt.size = 0;
-		return result::error_descr_invalid_data_size;
+		return {errors::descr_invalid_data_size};
 	}
-	return result::ok;
+	return {};
 }
 
 
@@ -613,20 +582,20 @@ parse_descr_list(PyParser::ParseResult *descr, dtype &dt)
 	// recursively contain further subtypes.
 
 	if (descr->nodes.size() == 0)
-		return result::error_descr_list_empty;
+		return {errors::descr_list_empty};
 
 	for (auto &node: descr->nodes) {
 		// check data type of the node
 		if (node->dtype != PyParser::Type::Tuple)
-			return result::error_descr_list_invalid_type;
+			return {errors::descr_list_invalid_type};
 
 		// needs at least 2 subnodes, i.e. tuple (n, t)
 		if (node->nodes.size() < 2)
-			return result::error_descr_list_incomplete_value;
+			return {errors::descr_list_incomplete_value};
 
 		// can have at most 3 subnodes, i.e. tuple (n, t, s)
 		if (node->nodes.size() > 3)
-			return result::error_descr_list_invalid_value;
+			return {errors::descr_list_invalid_value};
 
 		// first field: name
 		auto &field = add_field(dt, dtype{.name = std::string(node->nodes[0]->begin, node->nodes[0]->end)});
@@ -640,37 +609,39 @@ parse_descr_list(PyParser::ParseResult *descr, dtype &dt)
 		switch (node->nodes[1]->dtype) {
 			// string?
 			case PyParser::Type::String:
-				if ((res = parse_descr_string(node->nodes[1].get(), field)) != result::ok)
+				res = parse_descr_string(node->nodes[1].get(), field);
+				if (!res.is_ok())
 					return res;
 				break;
 
 			// recursively go through the list
 			case PyParser::Type::List:
-				if ((res = parse_descr_list(node->nodes[1].get(), field)) != result::ok)
+				res = parse_descr_list(node->nodes[1].get(), field);
+				if (!res.is_ok())
 					return res;
 				break;
 
 			// currently, other entries are not supported
 			default:
-				return result::error_descr_list_subtype_not_supported;
+				return {errors::descr_list_subtype_not_supported};
 		}
 
 		// third field (optional): shape
 		if (node->nodes.size() > 2) {
 			// test the type. must be a tuple
 			if (node->nodes[2]->dtype != PyParser::Type::Tuple)
-				return result::error_descr_list_invalid_shape;
+				return {errors::descr_list_invalid_shape};
 
 			for (auto &n: node->nodes[2]->nodes) {
 				// must be an integer value
 				if (n->dtype != PyParser::Type::Integer)
-					return result::error_descr_list_invalid_shape_value;
+					return {errors::descr_list_invalid_shape_value};
 				field.shape.push_back(n->value.l);
 			}
 		}
 	}
 
-	return result::ok;
+	return {};
 }
 
 
@@ -681,12 +652,12 @@ inline result
 parse_descr(PyParser::ParseResult *descr, dtype &dt)
 {
 	if (!descr)
-		return result::error_descr_invalid;
+		return {errors::descr_invalid};
 
 	switch (descr->dtype) {
 		case PyParser::Type::String: return parse_descr_string(descr, dt);
 		case PyParser::Type::List:   return parse_descr_list(descr, dt);
-		default:                     return result::error_descr_invalid_type;
+		default:                     return {errors::descr_invalid_type};
 	}
 }
 
@@ -722,20 +693,20 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 	PyParser parser;
 	auto pres = parser.parse(npy.header);
 	if (!pres)
-		return result::error_header_parsing_error;
+		return {errors::header_parsing_error};
 
 	// header must be one parse-node of type dict
 	if (pres->nodes.size() != 1 || pres->nodes[0]->dtype != PyParser::Type::Dict)
-		return result::error_header_invalid;
+		return {errors::header_invalid};
 
 	// the dict itself must have child-nodes
 	auto &root_dict = pres->nodes[0];
 	if (root_dict->nodes.size() == 0)
-		return result::error_header_empty;
+		return {errors::header_empty};
 
 	// the result code contains warnings for all fields. they will be disabled
 	// during parsing below if they are discovered
-	result res = result::warning_missing_descr | result::warning_missing_fortran_order | result::warning_missing_shape;
+	result res = {warnings::missing_descr | warnings::missing_fortran_order | warnings::missing_shape};
 
 	// we are not to assume any order of the entries in the dict (albeit they
 	// are normally ordered alphabetically). The parse result of the entires are
@@ -743,39 +714,39 @@ parse_header(npyfile &npy, dtype &dt, storage_order &order, u64_vector &shape)
 	for (auto &kv: root_dict->nodes) {
 		// check the parsed type for consistency
 		if (kv->dtype != PyParser::Type::KVPair || kv->nodes.size() != 2)
-			return result::error_header_invalid;
+			return {errors::header_invalid};
 
 		// descr, might be a string or a list of tuples
 		if (kv->nodes[0]->equals("descr")) {
 			auto tmp = parse_descr(kv->nodes[1].get(), dt);
-			if (tmp != result::ok)
+			if (!tmp.is_ok())
 				return tmp;
-			res &= ~result::warning_missing_descr;
+			res.warn &= ~warnings::missing_descr;
 		}
 
 		// determine if the array data is in fortran order or not
 		if (kv->nodes[0]->equals("fortran_order")) {
 			if (kv->nodes[1]->dtype != PyParser::Type::Boolean)
-				return result::error_fortran_order_invalid_value;
+				return {errors::fortran_order_invalid_value};
 			order = kv->nodes[1]->value.b ? storage_order::col_major : storage_order::row_major;
-			res &= ~result::warning_missing_fortran_order;
+			res.warn &= ~warnings::missing_fortran_order;
 		}
 
 		// read the shape of the array (NOTE: this is *not* the shape of a data
 		// type, but the shape of the array)
 		if (kv->nodes[0]->equals("shape")) {
 			if (kv->nodes[1]->dtype != PyParser::Type::Tuple)
-				return result::error_shape_invalid_value;
+				return {errors::shape_invalid_value};
 
 			// read each shape value
 			shape.clear();
 			for (auto &n: kv->nodes[1]->nodes) {
 				// must be an integer value
 				if (n->dtype != PyParser::Type::Integer)
-					return result::error_shape_invalid_shape_value;
+					return {errors::shape_invalid_shape_value};
 				shape.push_back(n->value.l);
 			}
-			res &= ~result::warning_missing_shape;
+			res.warn &= ~warnings::missing_shape;
 		}
 	}
 
@@ -817,20 +788,20 @@ compute_item_size(dtype &dt, u64 offset = 0)
 		// an item-size mismatch.
 		u64 subsize = 0;
 		for (auto &field: dt.fields) {
-			result res;
-			if ((res = compute_item_size(field, dt.offset + subsize)) != result::ok)
+			result res = compute_item_size(field, dt.offset + subsize);
+			if (!res.is_ok())
 				return res;
 
 			u64 tmp = 0;
 			if (add_overflow(subsize, field.item_size, tmp))
-				return result::error_size_overflow;
+				return {errors::size_overflow};
 			subsize = tmp;
 		}
 		if (dt.item_size != 0 && dt.item_size != subsize)
-			return result::error_item_size_mismatch;
+			return {errors::item_size_mismatch};
 		dt.item_size = subsize;
 	}
-	return result::ok;
+	return {};
 }
 
 
@@ -840,14 +811,14 @@ validate_data_size(const npyfile &npy, const dtype &dt)
 	// TODO: for streaming data, we cannot decide this (we don't know yet how
 	// much data there will be)
 	if (npy.streaming)
-		return result::ok;
+		return {};
 
 	// detect if data is truncated
 	if (npy.data_size % dt.item_size != 0)
-		return result::error_data_size_mismatch;
+		return {errors::data_size_mismatch};
 
 	// size = npy.data_size / dt.item_size;
-	return result::ok;
+	return {};
 }
 
 
@@ -882,7 +853,7 @@ compute_data_size(Reader &source, npyfile &npy)
 	else {
 		npy.data_size = 0;
 	}
-	return result::ok;
+	return {};
 }
 
 
@@ -891,7 +862,7 @@ from_stream(std::istream &)
 {
 	// TODO: for streaming data, we need read calls in between to fetch the
 	// next amount of data from the streambuf_iterator.
-	return result::error_unavailable;
+	return {errors::unavailable};
 }
 
 
@@ -900,7 +871,7 @@ template <typename Reader>
 inline result
 process_file_header(Reader &source, npyfile &npy, dtype &dt, u64_vector &shape, storage_order &order)
 {
-	auto res = result::ok;
+	result res = {};
 
 	// read stuff
 	if ((res |= read_magic_string(source,  npy)    , is_error(res))) return res;
@@ -921,7 +892,7 @@ process_file_header(Reader &source, npyfile &npy, dtype &dt, u64_vector &shape, 
 inline result
 from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 {
-	auto res = result::ok;
+	result res = {};
 
 	// setup the npyfile struct as non-streaming
 	npy.streaming = false;
@@ -968,7 +939,7 @@ from_buffer(u8_vector &&buffer, npyfile &npy, ndarray &dest)
 inline result
 from_mmap_buffer(mmap_buffer *mbuf, npyfile &npy, ndarray &dest)
 {
-	auto res = result::ok;
+	result res = {};
 
 	npy.streaming = false;
 
@@ -1022,7 +993,7 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 	zip_backend.make(&zip_state);
 	if (zip_backend.open(zip_state, filepath, zip::filemode::read) != zip::result::ok) {
 		zip_backend.release(&zip_state);
-		return result::error_file_open_failed;
+		return {errors::file_open_failed};
 	}
 
 	std::vector<std::string> file_list;
@@ -1030,7 +1001,7 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		zip_backend.close(zip_state);
 		zip_backend.release(&zip_state);
 		// TODO: better error return value
-		return result::error_file_read_failed;
+		return {errors::file_read_failed};
 	}
 
 	// for each archive file, decompress and parse the numpy array
@@ -1039,7 +1010,7 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		if (zip_backend.read(zip_state, fname, buffer) != zip::result::ok) {
 			zip_backend.close(zip_state);
 			zip_backend.release(&zip_state);
-			return result::error_file_read_failed;
+			return {errors::file_read_failed};
 		}
 
 		// remove ".npy" from array name
@@ -1052,8 +1023,8 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 		// npz struct
 		auto npy   = std::make_unique<npyfile>();
 		auto array = std::make_unique<ndarray>();
-		result res;
-		if ((res = from_buffer(std::move(buffer), *npy, *array)) != result::ok) {
+		result res = from_buffer(std::move(buffer), *npy, *array);
+		if (!res.is_ok()) {
 			zip_backend.close(zip_state);
 			zip_backend.release(&zip_state);
 			return res;
@@ -1070,7 +1041,7 @@ from_zip_archive(std::filesystem::path filepath, npzfile &npz)
 	// close the zip backend and release it again
 	zip_backend.close(zip_state);
 	zip_backend.release(&zip_state);
-	return result::ok;
+	return {};
 }
 
 inline result
@@ -1080,14 +1051,14 @@ open_fstream(std::filesystem::path filepath, std::ifstream &fstream)
 
 	// test if the file exists
 	if (!fs::exists(filepath))
-		return result::error_file_not_found;
+		return {errors::file_not_found};
 
 	// attempt to read
 	fstream.open(filepath, std::ios::binary);
 	if (!fstream)
-		return result::error_file_open_failed;
+		return {errors::file_open_failed};
 
-	return result::ok;
+	return {};
 }
 
 
@@ -1104,7 +1075,7 @@ from_npz(std::filesystem::path filepath, npzfile &npz)
 	bool test = is_zip_file(f);
 	f.close();
 	if (!test)
-		return result::error_wrong_filetype;
+		return {errors::wrong_filetype};
 
 	// let the zip backend handle this file from now on
 	return from_zip_archive(filepath, npz);
@@ -1132,7 +1103,7 @@ open_npy(std::filesystem::path filepath, std::ifstream &file)
 	// test if this is a PKzip file, and if yes then we exit early. for loading
 	// npz files, use from_npz
 	if (is_zip_file(file))
-		return result::error_wrong_filetype;
+		return {errors::wrong_filetype};
 
 	file.seekg(0);
 	return res;
@@ -1160,7 +1131,7 @@ template <typename NDArrayType, bool bulk_read = true>
 result
 from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullptr)
 {
-	result res = result::ok;
+	result res = {};
 
 	// read the file into a vector. the c++ iostream interface is horrible to
 	// work with and considered bad design by many developers. We'll load the
@@ -1171,7 +1142,7 @@ from_npy_ifstream(std::ifstream &file, NDArrayType &array, npyfile *npy = nullpt
 	if constexpr (bulk_read) {
 		file.read(reinterpret_cast<char*>(buf.data()), filesize);
 		if (file.bad() || static_cast<u64>(file.gcount()) != filesize)
-			return result::error_file_read_failed;
+			return {errors::file_read_failed};
 	}
 	else
 		buf.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
@@ -1218,7 +1189,7 @@ from_npy(std::filesystem::path filepath, NDArrayType &array, npyfile *npy = null
 				  "NDArrayType must derive from ncr::numpy::ndarray");
 
 	// try to open the file
-	result res = result::ok;
+	result res = {};
 	std::ifstream file;
 	if ((res = open_npy(filepath, file), is_error(res))) return res;
 
@@ -1265,7 +1236,7 @@ from_npy_callback(std::filesystem::path filepath,
                   npyfile *npy = nullptr)
 {
 	// try to open the file
-	result res = result::ok;
+	result res = {};
 	std::ifstream file;
 	if ((res = open_npy(filepath, file), is_error(res))) return res;
 
@@ -1308,12 +1279,12 @@ from_npy_callback(std::filesystem::path filepath,
 		// short read means EOF, truncation, or stream failure
 		if (bytes_read < chunk_bytes) {
 			if (source.fail() && !source.eof()) {
-				res = result::error_file_read_failed;
+				res = {errors::file_read_failed};
 				break;
 			}
 			// any leftover bytes after the last full item indicate truncation
 			if (bytes_read % item_size != 0) {
-				res = result::error_file_truncated;
+				res = {errors::file_truncated};
 				break;
 			}
 			if (bytes_read == 0)
@@ -1502,7 +1473,7 @@ to_npy_buffer(const ndarray &arr, u8_vector &buffer)
 	const size_t size = arr.bytesize();
 	buffer.insert(buffer.end(), ptr, ptr + size);
 
-	return result::ok;
+	return {};
 }
 
 
@@ -1513,17 +1484,17 @@ save(std::filesystem::path filepath, const ndarray &arr, bool overwrite=false)
 
 	// test if the file exists
 	if (fs::exists(filepath) && !overwrite)
-		return result::error_file_exists;
+		return {errors::file_exists};
 
 	std::ofstream fstream;
 	fstream.open(filepath, std::ios::binary | std::ios::out);
 	if (!fstream)
-		return result::error_file_open_failed;
+		return {errors::file_open_failed};
 
 	// turn the array into a numpy buffer
-	result res;
 	u8_vector buffer;
-	if ((res = to_npy_buffer(arr, buffer)) != result::ok)
+	result res = to_npy_buffer(arr, buffer);
+	if (!res.is_ok())
 		return res;
 
 	// write to file
@@ -1531,9 +1502,9 @@ save(std::filesystem::path filepath, const ndarray &arr, bool overwrite=false)
 	// size_t is most likely 64bit, but just to make sure cast it again. tellp()
 	// can easily be more than 32bit...
 	if (fstream.bad() || static_cast<u64>(fstream.tellp()) != static_cast<u64>(buffer.size()))
-		return result::error_file_write_failed;
+		return {errors::file_write_failed};
 
-	return result::ok;
+	return {};
 }
 
 
@@ -1561,13 +1532,13 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 	for (size_t i = 0; i < args.size(); ++i) {
 		for (size_t j = i + 1; j < args.size(); ++j) {
 			if (args[i].name == args[j].name)
-				return result::error_duplicate_array_name;
+				return {errors::duplicate_array_name};
 		}
 	}
 
 	// test if the file exists
 	if (fs::exists(filepath) && !overwrite)
-		return result::error_file_exists;
+		return {errors::file_exists};
 
 	zip::backend_state *zip_state        = nullptr;
 	zip::backend_interface zip_interface = zip::get_backend_interface();
@@ -1575,7 +1546,7 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 	zip_interface.make(&zip_state);
 	if (zip_interface.open(zip_state, filepath, zip::filemode::write) != zip::result::ok) {
 		zip_interface.release(&zip_state);
-		return result::error_file_open_failed;
+		return {errors::file_open_failed};
 	}
 
 	// write all arrays. append .npy to each argument name
@@ -1591,17 +1562,17 @@ to_zip_archive(std::filesystem::path filepath, std::vector<savez_arg> args, bool
 		if (zip_interface.write(zip_state, name, std::move(buffer), compress, compression_level) != zip::result::ok) {
 			zip_interface.close(zip_state);
 			zip_interface.release(&zip_state);
-			return result::error_file_write_failed;
+			return {errors::file_write_failed};
 		}
 	}
 
 	if (zip_interface.close(zip_state) != zip::result::ok) {
 		zip_interface.release(&zip_state);
-		return result::error_file_close;
+		return {errors::file_close};
 	}
 
 	zip_interface.release(&zip_state);
-	return result::ok;
+	return {};
 }
 
 
@@ -1739,7 +1710,7 @@ struct npysource<source_type::mmap>
 			buf = nullptr;
 			return res;
 		}
-		return result::ok;
+		return {};
 	}
 
 	inline size_t
@@ -1762,7 +1733,7 @@ struct npysource<source_type::mmap>
 			buf->position = buf->size - offset;
 			break;
 		}
-		return result::ok;
+		return {};
 	}
 
 	template <typename D>
@@ -1796,8 +1767,9 @@ struct npysource<source_type::mmap>
 	inline result
 	close()
 	{
-		result res = result::ok;
-		if ((res = numpy::close(buf), is_error(res))) return res;
+		result res = numpy::close(buf);
+		if (is_error(res))
+			return res;
 
 		delete buf;
 		buf = nullptr;
@@ -1828,15 +1800,15 @@ struct npysource<source_type::fstream>
 
 		// test if the file exists
 		if (!fs::exists(filepath))
-			return result::error_file_not_found;
+			return {errors::file_not_found};
 
 		// attempt to open
 		fstream.open(filepath, std::ios::binary);
 		if (!(fstream))
-			return result::error_file_open_failed;
+			return {errors::file_open_failed};
 
 		total_size = get_file_size(fstream);
-		return result::ok;
+		return {};
 	}
 
 	inline size_t
@@ -1852,8 +1824,8 @@ struct npysource<source_type::fstream>
 		fstream.clear();
 		fstream.seekg(offset, way);
 		if (fstream.fail() or fstream.bad())
-			return result::error_seek_failed;
-		return result::ok;
+			return {errors::seek_failed};
+		return {};
 	}
 
 	template <typename D>
@@ -1880,7 +1852,7 @@ struct npysource<source_type::fstream>
 	close()
 	{
 		fstream.close();
-		return result::ok;
+		return {};
 	}
 
 	inline bool
@@ -1920,7 +1892,7 @@ struct npysource<source_type::buffered>
 		std::ifstream fstream;
 		fstream.open(filepath, std::ios::binary);
 		if (!fstream)
-			return result::error_file_open_failed;
+			return {errors::file_open_failed};
 
 		total_size = get_file_size(fstream);
 		buffer = make_vector_buffer(total_size);
@@ -1931,8 +1903,8 @@ struct npysource<source_type::buffered>
 			buffer->data.assign(std::istreambuf_iterator<char>(fstream), std::istreambuf_iterator<char>());
 
 		fstream.close();
-		position   = 0;
-		return result::ok;
+		position = 0;
+		return {};
 	};
 
 	inline size_t
@@ -1956,8 +1928,8 @@ struct npysource<source_type::buffered>
 			break;
 		}
 		if (position > total_size)
-			return result::error_seek_failed;
-		return result::ok;
+			return {errors::seek_failed};
+		return {};
 	}
 
 	template <typename D>
@@ -1993,7 +1965,7 @@ struct npysource<source_type::buffered>
 	{
 		delete buffer;
 		buffer = nullptr;
-		return result::ok;
+		return {};
 	}
 
 	inline bool
@@ -2152,11 +2124,11 @@ struct npyreader
 	seek(size_t item_index)
 	{
 		if (!is_open)
-			return result::error_reader_not_open;
+			return {errors::reader_not_open};
 
 		size_t offset = npy.data_offset + dt.item_size * item_index;
 		if (offset > source.size())
-			return result::error_invalid_item_offset;
+			return {errors::invalid_item_offset};
 
 		return source.seek(offset);
 	}
